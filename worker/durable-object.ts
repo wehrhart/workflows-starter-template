@@ -1,18 +1,31 @@
 import { DurableObject } from "cloudflare:workers";
+import type { ProcessResult } from "./lib/types";
+
+/** Ordered pipeline steps for one bill-sheet batch. Kept in sync with the UI. */
+export const PIPELINE_STEPS = [
+	"read bill sheets",
+	"resolve & map",
+	"build spreadsheet",
+] as const;
+
+interface BatchResult {
+	downloadReady: boolean;
+	fileName: string;
+	uploadRows: number;
+	missingRows: number;
+	files: ProcessResult["files"];
+}
 
 /**
- * WorkflowStatusDO - Durable Object for managing workflow state and WebSocket connections
- *
- * Responsibilities:
- * - Accept and manage WebSocket connections using hibernation API
- * - Track step statuses for a workflow instance
- * - Broadcast updates to all connected clients
- * - Provide RPC method for workflow to update step status
+ * WorkflowStatusDO - tracks per-batch step status, the final result summary, and
+ * broadcasts both to connected WebSocket clients (hibernation API).
  */
 export class WorkflowStatusDO extends DurableObject {
 	private stepStatuses: Map<string, string>;
 	private currentStep: string | null;
 	private workflowStatus: "running" | "completed" | "error";
+	private errorMessage: string | null;
+	private result: BatchResult | null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -20,30 +33,24 @@ export class WorkflowStatusDO extends DurableObject {
 		this.stepStatuses = new Map();
 		this.currentStep = null;
 		this.workflowStatus = "running";
+		this.errorMessage = null;
+		this.result = null;
 
-		// Load state from durable storage to survive hibernation/eviction
 		ctx.blockConcurrencyWhile(async () => {
-			const storedStatuses =
+			const stored =
 				await ctx.storage.get<Record<string, string>>("stepStatuses");
-			const storedCurrent = await ctx.storage.get<string | null>("currentStep");
-			const storedWorkflowStatus = await ctx.storage.get<
-				"running" | "completed" | "error"
-			>("workflowStatus");
-
-			if (storedStatuses) {
-				this.stepStatuses = new Map(Object.entries(storedStatuses));
+			if (stored) {
+				this.stepStatuses = new Map(Object.entries(stored));
 			} else {
-				const steps = [
-					"process data",
-					"wait 2 seconds",
-					"wait for approval",
-					"final",
-				];
-				steps.forEach((s) => this.stepStatuses.set(s, "pending"));
+				PIPELINE_STEPS.forEach((s) => this.stepStatuses.set(s, "pending"));
 			}
-
-			this.currentStep = storedCurrent ?? null;
-			this.workflowStatus = storedWorkflowStatus ?? "running";
+			this.currentStep = (await ctx.storage.get<string | null>("currentStep")) ?? null;
+			this.workflowStatus =
+				(await ctx.storage.get<"running" | "completed" | "error">(
+					"workflowStatus",
+				)) ?? "running";
+			this.errorMessage = (await ctx.storage.get<string | null>("errorMessage")) ?? null;
+			this.result = (await ctx.storage.get<BatchResult | null>("result")) ?? null;
 		});
 	}
 
@@ -51,60 +58,52 @@ export class WorkflowStatusDO extends DurableObject {
 		if (request.headers.get("Upgrade") === "websocket") {
 			const pair = new WebSocketPair();
 			const [client, server] = Object.values(pair);
-
-			// Use hibernation API - acceptWebSocket allows the DO to hibernate
 			this.ctx.acceptWebSocket(server);
-
-			// Send current state immediately upon connection
 			server.send(JSON.stringify(this.getStateMessage()));
-
 			return new Response(null, { status: 101, webSocket: client });
 		}
-
 		return new Response("Expected WebSocket", { status: 400 });
 	}
 
-	/**
-	 * RPC method called by the workflow to update step status
-	 * This is called via stub.updateStep() from the workflow
-	 */
+	/** RPC: update a single step's status. */
 	async updateStep(stepName: string, status: string): Promise<void> {
 		this.stepStatuses.set(stepName, status);
-
 		if (status === "running" || status === "waiting") {
 			this.currentStep = stepName;
 		}
-
-		const allCompleted = Array.from(this.stepStatuses.values()).every(
-			(s) => s === "completed",
-		);
-		if (allCompleted) {
-			this.workflowStatus = "completed";
-			this.currentStep = null;
+		if (this.workflowStatus !== "error") {
+			const allCompleted = Array.from(this.stepStatuses.values()).every(
+				(s) => s === "completed",
+			);
+			if (allCompleted) {
+				this.workflowStatus = "completed";
+				this.currentStep = null;
+			}
 		}
-
-		await this.ctx.storage.put(
-			"stepStatuses",
-			Object.fromEntries(this.stepStatuses),
-		);
-		await this.ctx.storage.put("currentStep", this.currentStep);
-		await this.ctx.storage.put("workflowStatus", this.workflowStatus);
-
+		await this.persist();
 		this.broadcast(this.getStateMessage());
 	}
 
-	/**
-	 * WebSocket message handler (hibernation API)
-	 * Called when a client sends a message
-	 */
+	/** RPC: store the final result summary for the batch. */
+	async setResult(result: BatchResult): Promise<void> {
+		this.result = result;
+		await this.ctx.storage.put("result", result);
+		this.broadcast(this.getStateMessage());
+	}
+
+	/** RPC: mark the batch as errored. */
+	async setError(message: string): Promise<void> {
+		this.workflowStatus = "error";
+		this.errorMessage = message;
+		this.currentStep = null;
+		await this.persist();
+		this.broadcast(this.getStateMessage());
+	}
+
 	async webSocketMessage(ws: WebSocket, _message: string): Promise<void> {
 		ws.send(JSON.stringify(this.getStateMessage()));
 	}
 
-	/**
-	 * WebSocket close handler (hibernation API)
-	 * Called when a client closes the connection
-	 */
 	async webSocketClose(
 		ws: WebSocket,
 		code: number,
@@ -114,31 +113,35 @@ export class WorkflowStatusDO extends DurableObject {
 		ws.close(code, reason);
 	}
 
-	/**
-	 * Broadcast a message to all connected WebSocket clients
-	 */
-	private broadcast(message: object): void {
-		const sockets = this.ctx.getWebSockets();
-		const json = JSON.stringify(message);
+	private async persist(): Promise<void> {
+		await this.ctx.storage.put(
+			"stepStatuses",
+			Object.fromEntries(this.stepStatuses),
+		);
+		await this.ctx.storage.put("currentStep", this.currentStep);
+		await this.ctx.storage.put("workflowStatus", this.workflowStatus);
+		await this.ctx.storage.put("errorMessage", this.errorMessage);
+	}
 
-		for (const socket of sockets) {
+	private broadcast(message: object): void {
+		const json = JSON.stringify(message);
+		for (const socket of this.ctx.getWebSockets()) {
 			try {
 				socket.send(json);
 			} catch {
-				// Ignore errors for disconnected sockets
+				// ignore disconnected sockets
 			}
 		}
 	}
 
-	/**
-	 * Get the current state as a message object
-	 */
 	private getStateMessage(): object {
 		return {
 			type: "workflow_update",
 			currentStep: this.currentStep,
 			stepStatuses: Object.fromEntries(this.stepStatuses),
 			workflowStatus: this.workflowStatus,
+			errorMessage: this.errorMessage,
+			result: this.result,
 			timestamp: Date.now(),
 		};
 	}

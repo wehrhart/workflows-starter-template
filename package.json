@@ -17,6 +17,7 @@
 		"docs_url": "https://developers.cloudflare.com/workflows/"
 	},
 	"dependencies": {
+		"fflate": "0.8.2",
 		"react": "19.2.1",
 		"react-dom": "19.2.1"
 	},
@@ -43,9 +44,9 @@
 	},
 	"private": true,
 	"scripts": {
-		"build": "tsc -b && vite build",
+		"build": "wrangler types && tsc -b && vite build",
 		"cf-typegen": "wrangler types",
-		"check": "tsc && wrangler deploy --dry-run",
+		"check": "wrangler types && tsc && wrangler deploy --dry-run",
 		"deploy": "npm run build && wrangler deploy",
 		"dev": "vite",
 		"lint": "eslint .",
