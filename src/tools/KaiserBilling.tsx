@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowWebSocket } from "../hooks/useWorkflowWebSocket";
 import { PIPELINE_STEPS } from "../types";
-import type { StepStatus, FileSummary } from "../types";
+import type { StepStatus, FileSummary, LedgerSummary } from "../types";
 
 function StepRow({
 	name,
@@ -52,8 +52,8 @@ function FileTable({ files }: { files: FileSummary[] }) {
 					</tr>
 				</thead>
 				<tbody className="divide-y divide-neutral-100 dark:divide-neutral-800">
-					{files.map((f) => (
-						<tr key={f.sourceFile}>
+					{files.map((f, i) => (
+						<tr key={`${f.sourceFile}-${i}`}>
 							<td className="max-w-[14rem] truncate px-3 py-2 text-neutral-700 dark:text-neutral-200">
 								{f.sourceFile}
 							</td>
@@ -87,17 +87,86 @@ function FileTable({ files }: { files: FileSummary[] }) {
 	);
 }
 
-/** Kaiser Billing tool — bill sheet PDFs → filled Bill-Only upload spreadsheet. */
+/** The always-visible running master sheet: totals, download, clear. */
+function MasterPanel({
+	ledger,
+	onClear,
+}: {
+	ledger: LedgerSummary | null;
+	onClear: () => void;
+}) {
+	const rows = ledger?.totalRows ?? 0;
+	const missing = ledger?.totalMissing ?? 0;
+	const sheets = ledger?.files.length ?? 0;
+	const empty = rows === 0 && missing === 0;
+
+	return (
+		<div className="mb-6 rounded-2xl border border-neutral-200 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/70">
+			<div className="flex flex-wrap items-center justify-between gap-3">
+				<div>
+					<div className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+						Master sheet
+					</div>
+					<div className="text-xs text-neutral-500 dark:text-neutral-400">
+						{empty
+							? "Empty — process a bill sheet to start filling it."
+							: `${rows} row${rows === 1 ? "" : "s"} from ${sheets} bill sheet${sheets === 1 ? "" : "s"}${missing ? ` · ${missing} missing Case ID` : ""}`}
+					</div>
+				</div>
+				<div className="flex gap-2">
+					<a
+						href="/api/ledger/download"
+						className={`rounded-xl px-4 py-2 text-sm font-medium ${
+							empty
+								? "pointer-events-none bg-neutral-200 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-600"
+								: "bg-neutral-900 text-white hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+						}`}
+					>
+						Download master sheet
+					</a>
+					<button
+						onClick={onClear}
+						disabled={empty}
+						className="rounded-xl border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
+					>
+						Clear
+					</button>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+/** Kaiser Billing tool — bill sheet PDFs accumulate into one master upload sheet. */
 export function KaiserBilling() {
 	const [instanceId, setInstanceId] = useState<string | null>(null);
 	const [files, setFiles] = useState<File[]>([]);
 	const [isStarting, setIsStarting] = useState(false);
 	const [dragOver, setDragOver] = useState(false);
 	const [uploadError, setUploadError] = useState<string | null>(null);
+	const [ledger, setLedger] = useState<LedgerSummary | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	const state = useWorkflowWebSocket(instanceId);
 	const started = instanceId !== null;
+
+	const refreshLedger = useCallback(async () => {
+		try {
+			const res = await fetch("/api/ledger");
+			if (res.ok) setLedger(await res.json());
+		} catch {
+			// ignore
+		}
+	}, []);
+
+	useEffect(() => {
+		refreshLedger();
+	}, [refreshLedger]);
+
+	// When a batch finishes, the master sheet changed — refresh it.
+	useEffect(() => {
+		if (state.workflowStatus === "completed") refreshLedger();
+	}, [state.workflowStatus, refreshLedger]);
 
 	const addFiles = (list: FileList | null) => {
 		if (!list) return;
@@ -128,15 +197,20 @@ export function KaiserBilling() {
 		}
 	};
 
-	const reset = () => {
+	const processMore = () => {
 		setInstanceId(null);
 		setFiles([]);
 		setUploadError(null);
 	};
 
+	const clearMaster = async () => {
+		if (!confirm("Clear the master sheet? Do this after you've uploaded it to Kaiser.")) return;
+		await fetch("/api/ledger/clear", { method: "POST" });
+		refreshLedger();
+	};
+
 	const completed = state.workflowStatus === "completed" && state.result;
 	const errored = state.workflowStatus === "error";
-	const summary = useMemo(() => state.result, [state.result]);
 
 	return (
 		<div className="mx-auto w-full max-w-3xl">
@@ -145,10 +219,12 @@ export function KaiserBilling() {
 					Kaiser Billing
 				</h2>
 				<p className="text-sm text-neutral-500 dark:text-neutral-400">
-					Drop Kaiser bill sheet PDFs → get a ready-to-upload Bill-Only
-					spreadsheet.
+					Process bill sheets as they come in — rows pile into one master sheet
+					you download and upload to Kaiser.
 				</p>
 			</div>
+
+			<MasterPanel ledger={ledger} onClear={clearMaster} />
 
 			<div className="rounded-2xl border border-neutral-200 bg-white/80 p-6 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/70">
 				{!started && (
@@ -221,7 +297,7 @@ export function KaiserBilling() {
 						>
 							{isStarting
 								? "Uploading…"
-								: `Generate upload sheet${files.length ? ` (${files.length})` : ""}`}
+								: `Add to master sheet${files.length ? ` (${files.length})` : ""}`}
 						</button>
 					</>
 				)}
@@ -250,34 +326,30 @@ export function KaiserBilling() {
 							</div>
 						)}
 
-						{completed && summary && (
+						{completed && state.result && (
 							<div className="mt-5 space-y-4">
 								<div className="flex flex-wrap gap-3 text-sm">
 									<span className="rounded-lg bg-emerald-100 px-3 py-1.5 font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-										{summary.uploadRows} upload row
-										{summary.uploadRows === 1 ? "" : "s"}
+										+{state.result.addedRows} row
+										{state.result.addedRows === 1 ? "" : "s"} added
 									</span>
-									{summary.missingRows > 0 && (
+									{state.result.addedMissing > 0 && (
 										<span className="rounded-lg bg-amber-100 px-3 py-1.5 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-											{summary.missingRows} missing Case ID
+											{state.result.addedMissing} missing Case ID
 										</span>
 									)}
+									<span className="rounded-lg bg-neutral-100 px-3 py-1.5 font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+										master now: {state.result.totalRows} rows
+									</span>
 								</div>
 
-								<FileTable files={summary.files} />
-
-								<a
-									href={`/api/bill-sheets/${instanceId}/download`}
-									className="block w-full rounded-xl bg-neutral-900 px-4 py-2.5 text-center text-sm font-medium text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-								>
-									Download {summary.fileName}
-								</a>
+								<FileTable files={state.result.files} />
 							</div>
 						)}
 
 						{(completed || errored) && (
 							<button
-								onClick={reset}
+								onClick={processMore}
 								className="mt-4 w-full rounded-xl border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-600 transition-colors hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800"
 							>
 								Process more bill sheets
@@ -288,8 +360,10 @@ export function KaiserBilling() {
 			</div>
 
 			<p className="mt-4 text-xs text-neutral-400">
-				Missing Case IDs are collected on a separate tab in the downloaded
-				workbook. The Generate-File macro and drop-downs are preserved.
+				Each bill sheet's rows are added to the master sheet above. Download it
+				whenever you're ready to upload to Kaiser, then Clear to start the next
+				batch. Missing Case IDs collect on a separate tab. The Generate-File
+				macro and drop-downs are preserved.
 			</p>
 		</div>
 	);

@@ -4,10 +4,12 @@ An internal **tools hub** for your work — a dashboard of small web tools, each
 solving one workflow. Built on Cloudflare Workers, Workflows, Durable Objects,
 and R2.
 
-The first tool is **Kaiser Billing**: upload one or more Kaiser bill sheet PDFs
-→ the app reads each PDF, resolves the surgery location, combines repeated
-products, and writes the rows straight into a copy of your master Bill-Only
-`.xlsm` template (macro + drop-downs preserved) so you can mass upload as-is.
+The first tool is **Kaiser Billing**: upload Kaiser bill sheet PDFs → the app
+reads each PDF, resolves the surgery location, combines repeated products, and
+appends the rows to a **running master sheet** — a copy of your Bill-Only
+`.xlsm` template (macro + drop-downs preserved). Process bill sheets as they
+trickle in; **Download master sheet** when you're ready to upload to Kaiser,
+then **Clear** to start the next batch.
 
 PDFs are read **locally** (no cloud AI), so the whole app runs on your machine
 with `npm run dev` — no login, no API keys.
@@ -37,11 +39,13 @@ resolve & map
    │  • Case ID present  → row on "Bill Only Spreadsheet Upload"
    │  • Case ID missing  → row on a "Missing Case ID" tab (rep / date / surgeon)
    ▼
-build spreadsheet
-   │  surgical XML injection into your real .xlsm — VBA macro, Excel tables,
-   │  and the column A / L drop-down validations are left byte-for-byte intact
+add to master sheet
+   │  append the rows to the running ledger (a Durable Object) shared across
+   │  every batch
    ▼
-download the filled .xlsm
+Download master sheet  →  surgical XML injection into your real .xlsm — VBA
+macro, Excel tables, and the column A / L drop-down validations left
+byte-for-byte intact.  Clear resets the master for the next batch.
 ```
 
 ### Column mapping (Bill Only Spreadsheet Upload)

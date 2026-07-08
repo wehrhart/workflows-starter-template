@@ -26,13 +26,21 @@ export interface FileSummary {
 	note?: string;
 }
 
-/** Final batch result summary. */
+/** Final batch result summary (what this upload added + new master totals). */
 export interface BatchResult {
-	downloadReady: boolean;
-	fileName: string;
-	uploadRows: number;
-	missingRows: number;
+	addedRows: number;
+	addedMissing: number;
+	totalRows: number;
+	totalMissing: number;
 	files: FileSummary[];
+}
+
+/** Running master-sheet summary from GET /api/ledger. */
+export interface LedgerSummary {
+	totalRows: number;
+	totalMissing: number;
+	files: FileSummary[];
+	updatedAt: number;
 }
 
 export interface WorkflowState {
@@ -67,7 +75,7 @@ export const PIPELINE_STEPS: StepDefinition[] = [
 			"Match Surgery Location, combine products, split missing Case IDs",
 	},
 	{
-		name: "build spreadsheet",
-		description: "Fill the Bill-Only .xlsm upload template",
+		name: "add to master sheet",
+		description: "Append the rows to your running master sheet",
 	},
 ];

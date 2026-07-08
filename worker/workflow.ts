@@ -2,31 +2,26 @@ import { WorkflowEntrypoint, WorkflowStep } from "cloudflare:workers";
 import type { WorkflowEvent } from "cloudflare:workers";
 import { extractBillSheet } from "./lib/extract";
 import { processBillSheets } from "./lib/transform";
-import { buildFilledWorkbook } from "./lib/xlsx-inject";
-import { getTemplateBytes } from "./lib/template";
 import { PIPELINE_STEPS } from "./durable-object";
 import type { BillSheet } from "./lib/types";
 
 export interface BillSheetParams extends Record<string, unknown> {
 	batchId: string;
 	files: Array<{ key: string; name: string }>;
-	outputName: string;
 }
 
-const OUTPUT_KEY = (batchId: string) => `${batchId}/output.xlsm`;
-
 /**
- * BillSheetWorkflow — durable pipeline that turns uploaded Kaiser/Abyrx bill
- * sheet PDFs into a filled copy of the Bill-Only .xlsm upload template.
+ * BillSheetWorkflow — durable pipeline that reads uploaded Kaiser/Abyrx bill
+ * sheet PDFs and appends their rows to the running master sheet.
  *
- *   1. read bill sheets  — Workers AI reads each PDF into structured fields
- *   2. resolve & map      — resolve Surgery Location, combine products, route
- *                           missing-Case-ID sheets
- *   3. build spreadsheet  — inject rows into the template, store in R2
+ *   1. read bill sheets   — read each PDF into structured fields (offline)
+ *   2. resolve & map        — resolve Surgery Location, combine products, route
+ *                             missing-Case-ID sheets
+ *   3. add to master sheet  — append the rows to the ledger (LedgerDO)
  */
 export class BillSheetWorkflow extends WorkflowEntrypoint<Env, BillSheetParams> {
 	async run(event: WorkflowEvent<BillSheetParams>, step: WorkflowStep) {
-		const { batchId, files, outputName } = event.payload;
+		const { batchId, files } = event.payload;
 
 		const notify = async (
 			stepName: string,
@@ -74,26 +69,22 @@ export class BillSheetWorkflow extends WorkflowEntrypoint<Env, BillSheetParams> 
 			);
 			await notify(PIPELINE_STEPS[1], "completed");
 
-			// Step 3: inject rows into the template and store the workbook.
+			// Step 3: append this batch's rows to the running master sheet.
 			await notify(PIPELINE_STEPS[2], "running");
 			const summary = await step.do(PIPELINE_STEPS[2], async () => {
-				const bytes = buildFilledWorkbook(
-					getTemplateBytes(),
-					result.uploadRows,
-					result.missingRows,
+				const stub = this.env.LEDGER.get(
+					this.env.LEDGER.idFromName("default"),
 				);
-				await this.env.BILL_SHEETS.put(OUTPUT_KEY(batchId), bytes, {
-					httpMetadata: {
-						contentType:
-							"application/vnd.ms-excel.sheet.macroEnabled.12",
-						contentDisposition: `attachment; filename="${outputName}"`,
-					},
+				const state = await stub.append({
+					uploadRows: result.uploadRows,
+					missingRows: result.missingRows,
+					files: result.files,
 				});
 				return {
-					downloadReady: true,
-					fileName: outputName,
-					uploadRows: result.uploadRows.length,
-					missingRows: result.missingRows.length,
+					addedRows: result.uploadRows.length,
+					addedMissing: result.missingRows.length,
+					totalRows: state.uploadRows.length,
+					totalMissing: state.missingRows.length,
 					files: result.files,
 				};
 			});

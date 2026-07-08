@@ -1,22 +1,29 @@
 // Export the Workflow and Durable Object classes
 export { BillSheetWorkflow } from "./workflow";
 export { WorkflowStatusDO } from "./durable-object";
+export { LedgerDO } from "./ledger-do";
 
 import type { BillSheetParams } from "./workflow";
+import { buildFilledWorkbook } from "./lib/xlsx-inject";
+import { getTemplateBytes } from "./lib/template";
+import type { MissingRow } from "./lib/types";
 
 const MAX_FILES = 25;
 const MAX_BYTES = 15 * 1024 * 1024; // 15 MB per PDF
+const MASTER_FILENAME = "Abyrx_Bill_Only_Upload.xlsm";
 
-function outputName(): string {
-	return "Abyrx_Bill_Only_Upload.xlsm";
+function ledger(env: Env) {
+	return env.LEDGER.get(env.LEDGER.idFromName("default"));
 }
 
 /**
  * Main Worker fetch handler.
  *
- * - POST /api/bill-sheets            -> upload PDF bill sheets, start a batch
- * - GET  /api/bill-sheets/:id/download -> download the filled .xlsm
- * - GET  /ws?instanceId=:id          -> WebSocket for live pipeline status
+ * - POST /api/bill-sheets       -> upload PDF bill sheets, start a batch
+ * - GET  /api/ledger            -> current master-sheet summary (counts + files)
+ * - GET  /api/ledger/download   -> download the master .xlsm (all accumulated rows)
+ * - POST /api/ledger/clear      -> wipe the master sheet (after uploading to Kaiser)
+ * - GET  /ws?instanceId=:id     -> WebSocket for live pipeline status
  */
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
@@ -41,10 +48,7 @@ export default {
 				}
 				for (const f of uploads) {
 					if (f.size > MAX_BYTES) {
-						return Response.json(
-							{ error: `${f.name} exceeds 15 MB` },
-							{ status: 400 },
-						);
+						return Response.json({ error: `${f.name} exceeds 15 MB` }, { status: 400 });
 					}
 				}
 
@@ -61,7 +65,7 @@ export default {
 
 				await env.BILL_SHEET_WORKFLOW.create({
 					id: batchId,
-					params: { batchId, files, outputName: outputName() },
+					params: { batchId, files },
 				});
 
 				return Response.json({
@@ -80,36 +84,44 @@ export default {
 			}
 		}
 
-		// Download the filled workbook for a batch.
-		const dl = url.pathname.match(/^\/api\/bill-sheets\/([^/]+)\/download$/);
-		if (dl && request.method === "GET") {
-			const batchId = dl[1];
-			const obj = await env.BILL_SHEETS.get(`${batchId}/output.xlsm`);
-			if (!obj) {
-				return Response.json({ error: "Not ready" }, { status: 404 });
-			}
-			const headers = new Headers();
-			obj.writeHttpMetadata(headers);
-			headers.set(
-				"Content-Type",
-				"application/vnd.ms-excel.sheet.macroEnabled.12",
+		// Master-sheet summary.
+		if (url.pathname === "/api/ledger" && request.method === "GET") {
+			const snap = await ledger(env).snapshot();
+			return Response.json({
+				totalRows: snap.uploadRows.length,
+				totalMissing: snap.missingRows.length,
+				files: snap.files,
+				updatedAt: snap.updatedAt,
+			});
+		}
+
+		// Download the master .xlsm (all accumulated rows).
+		if (url.pathname === "/api/ledger/download" && request.method === "GET") {
+			const snap = await ledger(env).snapshot();
+			const bytes = buildFilledWorkbook(
+				getTemplateBytes(),
+				snap.uploadRows,
+				snap.missingRows as MissingRow[],
 			);
-			if (!headers.has("Content-Disposition")) {
-				headers.set(
-					"Content-Disposition",
-					`attachment; filename="${outputName()}"`,
-				);
-			}
-			return new Response(obj.body, { headers });
+			return new Response(bytes, {
+				headers: {
+					"Content-Type": "application/vnd.ms-excel.sheet.macroEnabled.12",
+					"Content-Disposition": `attachment; filename="${MASTER_FILENAME}"`,
+				},
+			});
+		}
+
+		// Clear the master sheet.
+		if (url.pathname === "/api/ledger/clear" && request.method === "POST") {
+			await ledger(env).clear();
+			return Response.json({ success: true });
 		}
 
 		// WebSocket for live status.
 		if (url.pathname === "/ws") {
 			const instanceId = url.searchParams.get("instanceId");
 			if (!instanceId) {
-				return new Response("instanceId query parameter required", {
-					status: 400,
-				});
+				return new Response("instanceId query parameter required", { status: 400 });
 			}
 			if (request.headers.get("Upgrade") !== "websocket") {
 				return new Response("Expected Upgrade: websocket", { status: 426 });

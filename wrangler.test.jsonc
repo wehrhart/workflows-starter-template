@@ -30,6 +30,10 @@
 			{
 				"name": "WORKFLOW_STATUS",
 				"class_name": "WorkflowStatusDO"
+			},
+			{
+				"name": "LEDGER",
+				"class_name": "LedgerDO"
 			}
 		]
 	},
@@ -37,6 +41,10 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["WorkflowStatusDO"]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["LedgerDO"]
 		}
 	]
 }

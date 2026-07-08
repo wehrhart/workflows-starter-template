@@ -5,14 +5,16 @@ import type { ProcessResult } from "./lib/types";
 export const PIPELINE_STEPS = [
 	"read bill sheets",
 	"resolve & map",
-	"build spreadsheet",
+	"add to master sheet",
 ] as const;
 
 interface BatchResult {
-	downloadReady: boolean;
-	fileName: string;
-	uploadRows: number;
-	missingRows: number;
+	/** Rows added by this batch. */
+	addedRows: number;
+	addedMissing: number;
+	/** Running totals in the master sheet after this batch. */
+	totalRows: number;
+	totalMissing: number;
 	files: ProcessResult["files"];
 }
 
