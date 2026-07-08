@@ -116,9 +116,14 @@ function MasterPanel({
 				<div className="flex gap-2">
 					<a
 						href="/api/ledger/download"
+						download="Abyrx_Bill_Only_Upload.xlsm"
+						aria-disabled={empty}
+						onClick={(e) => {
+							if (empty) e.preventDefault();
+						}}
 						className={`rounded-xl px-4 py-2 text-sm font-medium ${
 							empty
-								? "pointer-events-none bg-neutral-200 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-600"
+								? "cursor-not-allowed bg-neutral-200 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-600"
 								: "bg-neutral-900 text-white hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
 						}`}
 					>
