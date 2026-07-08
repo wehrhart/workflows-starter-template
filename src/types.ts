@@ -1,5 +1,5 @@
 /**
- * Shared TypeScript types for the Workflows starter template
+ * Shared front-end types for the Abyrx Bill Sheets tool.
  */
 
 export type StepStatus =
@@ -11,10 +11,36 @@ export type StepStatus =
 export type WorkflowStatus = "idle" | "running" | "completed" | "error";
 
 export interface StepDefinition {
-	id: string;
 	name: string;
 	description: string;
-	lineRange: [number, number];
+}
+
+/** Per-file outcome reported by the worker. */
+export interface FileSummary {
+	sourceFile: string;
+	caseId: string | null;
+	locationId: string | null;
+	locationName: string | null;
+	lineItems: number;
+	routed: "upload" | "missing-case-id";
+	note?: string;
+}
+
+/** Final batch result summary (what this upload added + new master totals). */
+export interface BatchResult {
+	addedRows: number;
+	addedMissing: number;
+	totalRows: number;
+	totalMissing: number;
+	files: FileSummary[];
+}
+
+/** Running master-sheet summary from GET /api/ledger. */
+export interface LedgerSummary {
+	totalRows: number;
+	totalMissing: number;
+	files: FileSummary[];
+	updatedAt: number;
 }
 
 export interface WorkflowState {
@@ -22,6 +48,8 @@ export interface WorkflowState {
 	currentStep: string | null;
 	stepStatuses: Record<string, StepStatus>;
 	workflowStatus: WorkflowStatus;
+	errorMessage: string | null;
+	result: BatchResult | null;
 	wsConnected: boolean;
 }
 
@@ -30,33 +58,24 @@ export interface WorkflowUpdateMessage {
 	currentStep: string | null;
 	stepStatuses: Record<string, StepStatus>;
 	workflowStatus: "running" | "completed" | "error";
+	errorMessage: string | null;
+	result: BatchResult | null;
 	timestamp: number;
 }
 
-// Step definitions for the workflow
-export const WORKFLOW_STEPS: StepDefinition[] = [
+/** The pipeline steps, in order. Mirrors PIPELINE_STEPS in the worker. */
+export const PIPELINE_STEPS: StepDefinition[] = [
 	{
-		id: "process-data",
-		name: "process data",
-		description: "Break code into durable steps",
-		lineRange: [3, 7],
+		name: "read bill sheets",
+		description: "Read each PDF into structured fields",
 	},
 	{
-		id: "wait-2-seconds",
-		name: "wait 2 seconds",
-		description: "Add time-based delays",
-		lineRange: [9, 10],
+		name: "resolve & map",
+		description:
+			"Match Surgery Location, combine products, split missing Case IDs",
 	},
 	{
-		id: "wait-for-approval",
-		name: "wait for approval",
-		description: "Pause for external events",
-		lineRange: [12, 16],
-	},
-	{
-		id: "final",
-		name: "final",
-		description: "Use data from previous steps",
-		lineRange: [18, 22],
+		name: "add to master sheet",
+		description: "Append the rows to your running master sheet",
 	},
 ];

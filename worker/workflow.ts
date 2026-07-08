@@ -1,65 +1,102 @@
 import { WorkflowEntrypoint, WorkflowStep } from "cloudflare:workers";
 import type { WorkflowEvent } from "cloudflare:workers";
+import { extractBillSheet } from "./lib/extract";
+import { processBillSheets } from "./lib/transform";
+import { PIPELINE_STEPS } from "./durable-object";
+import type { BillSheet } from "./lib/types";
+
+export interface BillSheetParams extends Record<string, unknown> {
+	batchId: string;
+	files: Array<{ key: string; name: string }>;
+}
 
 /**
- * This workflow showcases:
- * - Durable step execution with step.do
- * - Time-based delays with step.sleep
- * - Interactive pausing with step.waitForEvent
- * - Data flow between steps
+ * BillSheetWorkflow — durable pipeline that reads uploaded Kaiser/Abyrx bill
+ * sheet PDFs and appends their rows to the running master sheet.
  *
- * @see https://developers.cloudflare.com/workflows
+ *   1. read bill sheets   — read each PDF into structured fields (offline)
+ *   2. resolve & map        — resolve Surgery Location, combine products, route
+ *                             missing-Case-ID sheets
+ *   3. add to master sheet  — append the rows to the ledger (LedgerDO)
  */
-export class MyWorkflow extends WorkflowEntrypoint<
-	Env,
-	Record<string, unknown>
-> {
-	async run(event: WorkflowEvent<Record<string, unknown>>, step: WorkflowStep) {
-		const instanceId = event.instanceId;
+export class BillSheetWorkflow extends WorkflowEntrypoint<Env, BillSheetParams> {
+	async run(event: WorkflowEvent<BillSheetParams>, step: WorkflowStep) {
+		const { batchId, files } = event.payload;
 
-		// Notify Durable Object of step progress. Called outside step.do, so this
-		// operation may repeat. Safe here because updateStep is idempotent.
-		// Refer to: https://developers.cloudflare.com/workflows/build/rules-of-workflows/
-		const notifyStep = async (
+		const notify = async (
 			stepName: string,
 			status: "running" | "completed" | "waiting",
 		) => {
 			try {
-				const doId = this.env.WORKFLOW_STATUS.idFromName(instanceId);
-				const stub = this.env.WORKFLOW_STATUS.get(doId);
+				const stub = this.env.WORKFLOW_STATUS.get(
+					this.env.WORKFLOW_STATUS.idFromName(batchId),
+				);
 				await stub.updateStep(stepName, status);
 			} catch {
-				// Silently fail
+				// status is best-effort
+			}
+		};
+		const fail = async (message: string) => {
+			try {
+				const stub = this.env.WORKFLOW_STATUS.get(
+					this.env.WORKFLOW_STATUS.idFromName(batchId),
+				);
+				await stub.setError(message);
+			} catch {
+				// ignore
 			}
 		};
 
-		// Step 1: Basic step - shows step.do usage
-		await notifyStep("process data", "running");
-		const result = await step.do("process data", async () => {
-			await new Promise((resolve) => setTimeout(resolve, 1000));
-			return { processed: true, timestamp: Date.now() };
-		});
-		await notifyStep("process data", "completed");
+		try {
+			// Step 1: read every PDF (deterministic, no cloud AI).
+			await notify(PIPELINE_STEPS[0], "running");
+			const sheets = await step.do(PIPELINE_STEPS[0], async () => {
+				const out: BillSheet[] = [];
+				for (const f of files) {
+					const obj = await this.env.BILL_SHEETS.get(f.key);
+					if (!obj) throw new Error(`upload not found: ${f.name}`);
+					const bytes = new Uint8Array(await obj.arrayBuffer());
+					out.push(await extractBillSheet(f.name, bytes));
+				}
+				return out;
+			});
+			await notify(PIPELINE_STEPS[0], "completed");
 
-		// Step 2: Sleep step - shows step.sleep for delays
-		await notifyStep("wait 2 seconds", "running");
-		await step.sleep("wait 2 seconds", "2 seconds");
-		await notifyStep("wait 2 seconds", "completed");
+			// Step 2: resolve locations, combine products, split missing-Case-ID.
+			await notify(PIPELINE_STEPS[1], "running");
+			const result = await step.do(PIPELINE_STEPS[1], async () =>
+				processBillSheets(sheets),
+			);
+			await notify(PIPELINE_STEPS[1], "completed");
 
-		// Step 3: Wait for event - shows interactive step.waitForEvent
-		await notifyStep("wait for approval", "waiting");
-		const approval = await step.waitForEvent("wait for approval", {
-			type: "user-approval",
-			timeout: "60 minutes",
-		});
-		await notifyStep("wait for approval", "completed");
+			// Step 3: append this batch's rows to the running master sheet.
+			await notify(PIPELINE_STEPS[2], "running");
+			const summary = await step.do(PIPELINE_STEPS[2], async () => {
+				const stub = this.env.LEDGER.get(
+					this.env.LEDGER.idFromName("default"),
+				);
+				const state = await stub.append({
+					uploadRows: result.uploadRows,
+					missingRows: result.missingRows,
+					files: result.files,
+				});
+				return {
+					addedRows: result.uploadRows.length,
+					addedMissing: result.missingRows.length,
+					totalRows: state.uploadRows.length,
+					totalMissing: state.missingRows.length,
+					files: result.files,
+				};
+			});
+			await notify(PIPELINE_STEPS[2], "completed");
 
-		// Step 4: Final step
-		await notifyStep("final", "running");
-		await step.do("final", async () => {
-			console.log("Results:", { result, approval: approval.payload });
-			await new Promise((resolve) => setTimeout(resolve, 1000));
-		});
-		await notifyStep("final", "completed");
+			const stub = this.env.WORKFLOW_STATUS.get(
+				this.env.WORKFLOW_STATUS.idFromName(batchId),
+			);
+			await stub.setResult(summary);
+		} catch (err) {
+			await fail(err instanceof Error ? err.message : "Processing failed");
+			throw err;
+		}
 	}
 }

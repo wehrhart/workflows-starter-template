@@ -1,0 +1,50 @@
+/**
+ * Test-only Wrangler config for the vitest workers pool.
+ *
+ * Identical to wrangler.jsonc but WITHOUT the Workers AI binding (which forces
+ * the pool into remote mode / requires a Cloudflare login) and WITHOUT the
+ * static assets binding (dist/ need not be built to run unit tests). The unit
+ * tests exercise the pure transform + xlsx-injection logic and never call AI.
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "abyrx-bill-sheets",
+	"main": "worker/index.ts",
+	"compatibility_date": "2025-10-08",
+	"compatibility_flags": ["nodejs_compat"],
+	"r2_buckets": [
+		{
+			"binding": "BILL_SHEETS",
+			"bucket_name": "abyrx-bill-sheets"
+		}
+	],
+	"workflows": [
+		{
+			"name": "abyrx-bill-sheet-workflow",
+			"binding": "BILL_SHEET_WORKFLOW",
+			"class_name": "BillSheetWorkflow"
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "WORKFLOW_STATUS",
+				"class_name": "WorkflowStatusDO"
+			},
+			{
+				"name": "LEDGER",
+				"class_name": "LedgerDO"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["WorkflowStatusDO"]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["LedgerDO"]
+		}
+	]
+}
