@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { parseBillSheetText, normalizeDate } from "../worker/lib/extract";
+import {
+	parseBillSheetText,
+	normalizeDate,
+	extractCaseId,
+} from "../worker/lib/extract";
 
 // Text as unpdf extracts it from the real ABYRX bill sheet 80485 (Case ID
 // blank; labels render with noisy inter-letter spacing).
@@ -35,6 +39,41 @@ describe("parseBillSheetText", () => {
 		const s = parseBillSheetText(TEXT_MISSING_CASE, "x.pdf");
 		expect(s.shippingZip).not.toBe("10180");
 		expect(s.shippingZip).toBe("97015");
+	});
+});
+
+// A sheet with an EMPTY Procedure field and a Case ID written with a prefix —
+// the shape that used to make the Physician field swallow the labels.
+const TEXT_EUGENE = `Surgery Information D a te o f Su rg ery 4/27/2026 Su rg eo n 's N a m e Eugene Jang P ro ced u re W h ere U sed C a se D eta ils E-settlements case #3859691 Hospital Information N a m e Kaiser Roseville Medical Center V en d o r N a m e Abyrx, Inc. C o n ta ct Sh ip p in g A d d ress 1600 Eureka Rd., Roseville, CA 95661 Billin g A d d ress 1600 Eureka Rd Rep N a m e Tyler Vance Product Usage Information P ro d u ct N u m b er D escrip tio n Lo t N u m b er U ID U n its U sed P rice P er U n it To ta l P rice OS-MON-1001 MONTAGE 5cc 41234 412340999 1.00 1,448.00 1,448.00 To ta l 1,448.00 ABYRX, INC.`;
+
+describe("parseBillSheetText — empty Procedure / prefixed Case ID", () => {
+	it("keeps Physician to just the name (no label bleed)", () => {
+		const s = parseBillSheetText(TEXT_EUGENE, "eugene.pdf");
+		expect(s.surgeonName).toBe("Eugene Jang");
+	});
+	it("pulls the ID out of a prefixed Case Details field", () => {
+		const s = parseBillSheetText(TEXT_EUGENE, "eugene.pdf");
+		expect(s.caseId).toBe("3859691");
+	});
+	it("still reads the other fields", () => {
+		const s = parseBillSheetText(TEXT_EUGENE, "eugene.pdf");
+		expect(s.surgeryDate).toBe("04/27/2026");
+		expect(s.hospitalName).toBe("Kaiser Roseville Medical Center");
+		expect(s.repName).toBe("Tyler Vance");
+		expect(s.shippingZip).toBe("95661");
+		expect(s.products[0].productNumber).toBe("OS-MON-1001");
+	});
+});
+
+describe("extractCaseId", () => {
+	it("takes the token after a #", () => {
+		expect(extractCaseId("E-settlements case #3859691")).toBe("3859691");
+	});
+	it("takes a trailing ID", () => {
+		expect(extractCaseId("Case 80486123")).toBe("80486123");
+	});
+	it("is null for empty", () => {
+		expect(extractCaseId("   ")).toBeNull();
 	});
 });
 

@@ -34,27 +34,85 @@ function lastLabelEnd(text: string, label: string, before: number): number {
 	return end;
 }
 
-/** The text between (the last occurrence of) `label` and the start of `nextLabel`. */
-function valueBetween(text: string, label: string, nextLabel: string): string {
-	const nm = labelRe(nextLabel).exec(text);
-	const nextIdx = nm ? nm.index : text.length;
-	const end = lastLabelEnd(text, label, nextIdx);
-	return end < 0 ? "" : text.slice(end, nextIdx).trim();
+/**
+ * Every field label on the sheet, in roughly document order. We locate all of
+ * them, then read each field's value as the text up to *whichever* label comes
+ * next — so an empty or reordered field (e.g. a blank Procedure) can't let one
+ * value bleed into the next.
+ */
+const FIELD_LABELS = [
+	"Date of Surgery",
+	"Surgeon's Name",
+	"Procedure",
+	"Where Used",
+	"Case Details",
+	"Hospital Information",
+	"Vendor Name",
+	"Contact",
+	"Shipping Address",
+	"Billing Address",
+	"Phone",
+	"Fax",
+	"Rep Name",
+	"Product Usage Information",
+] as const;
+
+/** First occurrence index of each label present in the text. */
+function labelPositions(text: string): Map<string, number> {
+	const pos = new Map<string, number>();
+	for (const label of FIELD_LABELS) {
+		const m = labelRe(label).exec(text);
+		if (m) pos.set(label, m.index);
+	}
+	return pos;
+}
+
+/** Value of `label`: text from its (doubled) end up to the next label present. */
+function fieldValue(text: string, pos: Map<string, number>, label: string): string {
+	const p = pos.get(label);
+	if (p === undefined) return "";
+	let next = text.length;
+	for (const [other, idx] of pos) {
+		if (other !== label && idx > p && idx < next) next = idx;
+	}
+	const end = lastLabelEnd(text, label, next);
+	return end < 0 ? "" : text.slice(end, next).trim();
 }
 
 function num(s: string): number {
 	return parseFloat(s.replace(/[$,]/g, "")) || 0;
 }
 
+/**
+ * Pull the usable Case ID out of the "Case Details" text. Sheets write it a few
+ * ways — e.g. "E-settlements case #3859691" — so prefer the token after a "#",
+ * then a trailing ID, else the whole thing.
+ */
+export function extractCaseId(raw: string): string | null {
+	const t = raw.trim();
+	if (!t) return null;
+	const hash = t.match(/#\s*([A-Za-z0-9-]{3,})/);
+	if (hash) return hash[1];
+	const trailing = t.match(/([A-Za-z]?\d{4,})\s*$/);
+	if (trailing) return trailing[1];
+	return t;
+}
+
 /** Parse the fields of an Abyrx/Kaiser bill sheet out of its extracted text. */
 export function parseBillSheetText(text: string, fileName: string): BillSheet {
+	const pos = labelPositions(text);
 	const surgeryDate = (text.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/) || [])[1] ?? null;
-	const surgeon = valueBetween(text, "Surgeon's Name", "Procedure");
-	const procedure = valueBetween(text, "Procedure", "Where Used");
-	const caseId = valueBetween(text, "Case Details", "Hospital Information");
-	const hospital = valueBetween(text, "Name", "Vendor Name");
-	const shipping = valueBetween(text, "Shipping Address", "Billing Address");
-	const rep = valueBetween(text, "Rep Name", "Product Usage Information");
+	const surgeon = fieldValue(text, pos, "Surgeon's Name");
+	const procedure = fieldValue(text, pos, "Procedure");
+	const caseId = extractCaseId(fieldValue(text, pos, "Case Details"));
+	const shipping = fieldValue(text, pos, "Shipping Address");
+	const rep = fieldValue(text, pos, "Rep Name");
+	// Hospital name sits between "Hospital Information" and "Vendor Name", after
+	// its own "Name" label — strip that leading label off.
+	const hospital = fieldValue(text, pos, "Hospital Information").replace(
+		/^(?:\s*N\s*a\s*m\s*e)+\s*/i,
+		"",
+	);
 
 	const zips = shipping.match(/\b\d{5}\b/g);
 	const zip = zips ? zips[zips.length - 1] : null;
@@ -84,7 +142,7 @@ export function parseBillSheetText(text: string, fileName: string): BillSheet {
 	};
 	return {
 		sourceFile: fileName,
-		caseId: clean(caseId),
+		caseId,
 		surgeryDate: normalizeDate(surgeryDate),
 		surgeonName: clean(surgeon),
 		procedure: clean(procedure),
