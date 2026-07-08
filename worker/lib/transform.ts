@@ -26,7 +26,6 @@ export function combineProducts(products: ProductLine[]): Array<{
 	description: string;
 	quantity: number;
 	unitPrice: number;
-	lots: string;
 }> {
 	const groups = new Map<
 		string,
@@ -35,7 +34,6 @@ export function combineProducts(products: ProductLine[]): Array<{
 			description: string;
 			quantity: number;
 			unitPrice: number;
-			lots: string[];
 		}
 	>();
 
@@ -50,14 +48,12 @@ export function combineProducts(products: ProductLine[]): Array<{
 		if (g) {
 			g.quantity += units;
 			g.unitPrice += lineTotal;
-			if (p.lotNumber && !g.lots.includes(p.lotNumber)) g.lots.push(p.lotNumber);
 		} else {
 			groups.set(key, {
 				productNumber: p.productNumber.trim(),
 				description: p.description.trim(),
 				quantity: units,
 				unitPrice: lineTotal,
-				lots: p.lotNumber ? [p.lotNumber] : [],
 			});
 		}
 	}
@@ -67,7 +63,6 @@ export function combineProducts(products: ProductLine[]): Array<{
 		description: g.description,
 		quantity: g.quantity,
 		unitPrice: money(g.unitPrice),
-		lots: g.lots.join(", "),
 	}));
 }
 
@@ -128,7 +123,6 @@ export function billSheetToRows(sheet: BillSheet): {
 			L: DEFAULT_UOM,
 			M: c.unitPrice,
 		};
-		if (c.lots) row.R = c.lots;
 		return row;
 	});
 
