@@ -53,7 +53,7 @@ export class BillSheetWorkflow extends WorkflowEntrypoint<Env, BillSheetParams> 
 		};
 
 		try {
-			// Step 1: read every PDF with Workers AI.
+			// Step 1: read every PDF (deterministic, no cloud AI).
 			await notify(PIPELINE_STEPS[0], "running");
 			const sheets = await step.do(PIPELINE_STEPS[0], async () => {
 				const out: BillSheet[] = [];
@@ -61,7 +61,7 @@ export class BillSheetWorkflow extends WorkflowEntrypoint<Env, BillSheetParams> 
 					const obj = await this.env.BILL_SHEETS.get(f.key);
 					if (!obj) throw new Error(`upload not found: ${f.name}`);
 					const bytes = new Uint8Array(await obj.arrayBuffer());
-					out.push(await extractBillSheet(this.env, f.name, bytes));
+					out.push(await extractBillSheet(f.name, bytes));
 				}
 				return out;
 			});
@@ -77,9 +77,8 @@ export class BillSheetWorkflow extends WorkflowEntrypoint<Env, BillSheetParams> 
 			// Step 3: inject rows into the template and store the workbook.
 			await notify(PIPELINE_STEPS[2], "running");
 			const summary = await step.do(PIPELINE_STEPS[2], async () => {
-				const template = await getTemplateBytes(this.env);
 				const bytes = buildFilledWorkbook(
-					template,
+					getTemplateBytes(),
 					result.uploadRows,
 					result.missingRows,
 				);

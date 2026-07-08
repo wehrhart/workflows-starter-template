@@ -1,198 +1,118 @@
+import { extractText, getDocumentProxy } from "unpdf";
 import type { BillSheet, ProductLine } from "./types";
 
 /**
- * Extraction model. Llama 3.3 handles the mixed label/table layout of a bill
- * sheet well and supports JSON-schema-constrained output on Workers AI.
+ * Bill sheets are read deterministically — no cloud AI, so the app runs fully
+ * locally (`npm run dev`) with no Cloudflare login. `unpdf` (a Workers-friendly
+ * build of pdf.js) turns the PDF into text; the parser below anchors on the
+ * sheet's field labels, which render with noisy inter-letter spacing, so every
+ * label match is spacing-tolerant.
  */
-const EXTRACT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
-const EXTRACT_SCHEMA = {
-	type: "object",
-	properties: {
-		caseId: {
-			type: ["string", "null"],
-			description:
-				"The Case ID under 'Case Details'. null if that field is blank/absent.",
-		},
-		surgeryDate: {
-			type: ["string", "null"],
-			description: "Date of Surgery, formatted MM/DD/YYYY.",
-		},
-		surgeonName: { type: ["string", "null"] },
-		procedure: { type: ["string", "null"] },
-		hospitalName: { type: ["string", "null"] },
-		repName: { type: ["string", "null"], description: "Distributor/Rep name." },
-		repEmail: { type: ["string", "null"] },
-		shippingAddress: { type: ["string", "null"] },
-		shippingZip: {
-			type: ["string", "null"],
-			description: "5-digit zip from the shipping address.",
-		},
-		products: {
-			type: "array",
-			items: {
-				type: "object",
-				properties: {
-					productNumber: { type: "string" },
-					description: { type: "string" },
-					unitsUsed: { type: "number" },
-					pricePerUnit: { type: "number" },
-					totalPrice: { type: "number" },
-					lotNumber: { type: ["string", "null"] },
-				},
-				required: ["productNumber", "description"],
-			},
-		},
-	},
-	required: ["caseId", "products"],
-} as const;
-
-const SYSTEM_PROMPT = `You extract structured data from a medical device "bill sheet" (a.k.a. bill only sheet).
-Return ONLY the fields in the schema. Rules:
-- Case ID lives under the "Case Details" section. If it is blank or absent, return null — do NOT invent one.
-- surgeryDate must be MM/DD/YYYY.
-- Each row of the "Product Usage Information" table is one product line: product number, description, units used, price per unit, total price, lot number.
-- Numbers must be plain numbers (strip $ and thousands separators).
-- shippingZip is the 5-digit zip from the Shipping Address.`;
-
-/** Convert a document (PDF) to markdown text using Workers AI. */
-export async function pdfToMarkdown(
-	env: Env,
-	fileName: string,
-	bytes: Uint8Array,
-): Promise<string> {
-	const results = await env.AI.toMarkdown([
-		{ name: fileName, blob: new Blob([bytes]) },
-	]);
-	const first = Array.isArray(results) ? results[0] : results;
-	if (first && first.format === "markdown") return first.data;
-	throw new Error(
-		first && first.format === "error"
-			? `Could not read ${fileName}: ${first.error}`
-			: `Could not read ${fileName}`,
-	);
+/** Extract raw text from a PDF using unpdf (runs in the Workers runtime). */
+export async function pdfToText(bytes: Uint8Array): Promise<string> {
+	const pdf = await getDocumentProxy(bytes);
+	const { text } = await extractText(pdf, { mergePages: true });
+	return Array.isArray(text) ? text.join("\n") : text;
 }
 
-/** Run the LLM extraction over bill-sheet markdown. */
-export async function extractFromMarkdown(
-	env: Env,
-	markdown: string,
-): Promise<Partial<BillSheet>> {
-	const resp = (await env.AI.run(EXTRACT_MODEL, {
-		messages: [
-			{ role: "system", content: SYSTEM_PROMPT },
-			{ role: "user", content: markdown },
-		],
-		response_format: {
-			type: "json_schema",
-			json_schema: EXTRACT_SCHEMA,
-		},
-		// deterministic-ish extraction
-		temperature: 0,
-	})) as { response?: unknown };
-
-	const raw = resp?.response;
-	const obj = typeof raw === "string" ? safeJson(raw) : (raw as object | null);
-	return (obj ?? {}) as Partial<BillSheet>;
+/** Build a spacing-tolerant regex for a label whose letters may be split by spaces. */
+function labelRe(label: string): RegExp {
+	const chars = label
+		.replace(/\s+/g, "")
+		.split("")
+		.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+	return new RegExp(chars.join("\\s*"), "gi");
 }
 
-/** Full pipeline: PDF bytes -> normalized BillSheet. */
-export async function extractBillSheet(
-	env: Env,
-	fileName: string,
-	bytes: Uint8Array,
-): Promise<BillSheet> {
-	const markdown = await pdfToMarkdown(env, fileName, bytes);
-	const partial = await extractFromMarkdown(env, markdown);
-	return normalizeBillSheet(partial, fileName);
+/** End index of the last occurrence of `label` before `before`. */
+function lastLabelEnd(text: string, label: string, before: number): number {
+	const re = labelRe(label);
+	let end = -1;
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(text)) && m.index < before) end = m.index + m[0].length;
+	return end;
 }
 
-function safeJson(s: string): object | null {
-	try {
-		return JSON.parse(s);
-	} catch {
-		const m = s.match(/\{[\s\S]*\}/);
-		if (m) {
-			try {
-				return JSON.parse(m[0]);
-			} catch {
-				return null;
-			}
-		}
-		return null;
+/** The text between (the last occurrence of) `label` and the start of `nextLabel`. */
+function valueBetween(text: string, label: string, nextLabel: string): string {
+	const nm = labelRe(nextLabel).exec(text);
+	const nextIdx = nm ? nm.index : text.length;
+	const end = lastLabelEnd(text, label, nextIdx);
+	return end < 0 ? "" : text.slice(end, nextIdx).trim();
+}
+
+function num(s: string): number {
+	return parseFloat(s.replace(/[$,]/g, "")) || 0;
+}
+
+/** Parse the fields of an Abyrx/Kaiser bill sheet out of its extracted text. */
+export function parseBillSheetText(text: string, fileName: string): BillSheet {
+	const surgeryDate = (text.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/) || [])[1] ?? null;
+	const surgeon = valueBetween(text, "Surgeon's Name", "Procedure");
+	const procedure = valueBetween(text, "Procedure", "Where Used");
+	const caseId = valueBetween(text, "Case Details", "Hospital Information");
+	const hospital = valueBetween(text, "Name", "Vendor Name");
+	const shipping = valueBetween(text, "Shipping Address", "Billing Address");
+	const rep = valueBetween(text, "Rep Name", "Product Usage Information");
+
+	const zips = shipping.match(/\b\d{5}\b/g);
+	const zip = zips ? zips[zips.length - 1] : null;
+
+	// Product rows follow the "Total Price" header cell of the usage table.
+	const start = lastLabelEnd(text, "Total Price", text.length);
+	const section = start >= 0 ? text.slice(start) : text;
+	const prodRe =
+		/([A-Z0-9][A-Z0-9-]{2,})\s+(.+?)\s+(\S+)\s+(\d{6,})\s+(\d+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})/g;
+	const products: ProductLine[] = [];
+	let pm: RegExpExecArray | null;
+	while ((pm = prodRe.exec(section))) {
+		products.push({
+			productNumber: pm[1],
+			description: pm[2].trim(),
+			unitsUsed: num(pm[5]) || 1,
+			pricePerUnit: num(pm[6]),
+			totalPrice: num(pm[7]),
+			lotNumber: pm[3] || undefined,
+			uid: pm[4] || undefined,
+		});
 	}
-}
 
-const US_ZIP = /\b(\d{5})(?:-\d{4})?\b/;
-
-/** Coerce a date string into MM/DD/YYYY when possible. */
-export function normalizeDate(d: string | null | undefined): string | null {
-	if (!d) return null;
-	const s = String(d).trim();
-	const m = s.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
-	if (m) {
-		const mm = m[1].padStart(2, "0");
-		const dd = m[2].padStart(2, "0");
-		let yyyy = m[3];
-		if (yyyy.length === 2) yyyy = `20${yyyy}`;
-		return `${mm}/${dd}/${yyyy}`;
-	}
-	return s;
-}
-
-/** Fill in / clean derived fields the model may have missed. */
-export function normalizeBillSheet(
-	partial: Partial<BillSheet>,
-	fileName: string,
-): BillSheet {
-	const caseId = partial.caseId?.toString().trim();
-	const shippingAddress = partial.shippingAddress?.toString().trim() ?? null;
-	let zip = partial.shippingZip?.toString().trim() ?? null;
-	if (!zip && shippingAddress) {
-		const m = shippingAddress.match(US_ZIP);
-		if (m) zip = m[1];
-	}
-	if (zip) zip = zip.slice(0, 5);
-
-	const products: ProductLine[] = (partial.products ?? [])
-		.filter((p) => p && p.productNumber)
-		.map((p) => ({
-			productNumber: String(p.productNumber).trim(),
-			description: String(p.description ?? "").trim(),
-			unitsUsed: toNum(p.unitsUsed, 1),
-			pricePerUnit: toNum(p.pricePerUnit, 0),
-			totalPrice: toNum(
-				p.totalPrice,
-				toNum(p.unitsUsed, 1) * toNum(p.pricePerUnit, 0),
-			),
-			lotNumber: p.lotNumber ? String(p.lotNumber).trim() : undefined,
-		}));
-
+	const clean = (s: string) => {
+		const t = s.trim();
+		return t.length ? t : null;
+	};
 	return {
 		sourceFile: fileName,
-		caseId: caseId && caseId.length > 0 ? caseId : null,
-		surgeryDate: normalizeDate(partial.surgeryDate),
-		surgeonName: nn(partial.surgeonName),
-		procedure: nn(partial.procedure),
-		hospitalName: nn(partial.hospitalName),
-		repName: nn(partial.repName),
-		repEmail: nn(partial.repEmail),
-		shippingAddress,
+		caseId: clean(caseId),
+		surgeryDate: normalizeDate(surgeryDate),
+		surgeonName: clean(surgeon),
+		procedure: clean(procedure),
+		hospitalName: clean(hospital),
+		repName: clean(rep),
+		repEmail: null,
+		shippingAddress: clean(shipping),
 		shippingZip: zip,
 		products,
 	};
 }
 
-function toNum(v: unknown, fallback: number): number {
-	if (typeof v === "number" && Number.isFinite(v)) return v;
-	if (typeof v === "string") {
-		const n = parseFloat(v.replace(/[$,]/g, ""));
-		if (Number.isFinite(n)) return n;
-	}
-	return fallback;
+/** Full pipeline: PDF bytes -> parsed BillSheet. */
+export async function extractBillSheet(
+	fileName: string,
+	bytes: Uint8Array,
+): Promise<BillSheet> {
+	const text = await pdfToText(bytes);
+	return parseBillSheetText(text, fileName);
 }
 
-function nn(v: unknown): string | null {
-	const s = v == null ? "" : String(v).trim();
-	return s.length ? s : null;
+/** Coerce a date string into MM/DD/YYYY when possible. */
+export function normalizeDate(d: string | null | undefined): string | null {
+	if (!d) return null;
+	const m = String(d).trim().match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+	if (!m) return String(d).trim();
+	const mm = m[1].padStart(2, "0");
+	const dd = m[2].padStart(2, "0");
+	const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+	return `${mm}/${dd}/${yyyy}`;
 }

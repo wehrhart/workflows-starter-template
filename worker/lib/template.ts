@@ -1,25 +1,17 @@
-/**
- * The blank Bill-Only .xlsm template is stored as an object in the R2 bucket
- * (not embedded in the bundle, so it can be swapped without a redeploy).
- *
- * Upload it once after creating the bucket:
- *   wrangler r2 object put abyrx-bill-sheets/_template/bill-only-template.xlsm \
- *     --file=path/to/Bill_Only_File_Upload_Template.xlsm
- */
-export const TEMPLATE_KEY = "_template/bill-only-template.xlsm";
+import { TEMPLATE_XLSM_BASE64 } from "../assets/template";
 
 let cached: Uint8Array | null = null;
 
-/** Fetch the blank template from R2 (memoized for the isolate's lifetime). */
-export async function getTemplateBytes(env: Env): Promise<Uint8Array> {
+/**
+ * Decode the embedded blank Bill-Only template into bytes (memoized).
+ * Embedded (not fetched from R2) so the app is self-contained and runs locally
+ * with no extra setup.
+ */
+export function getTemplateBytes(): Uint8Array {
 	if (cached) return cached;
-	const obj = await env.BILL_SHEETS.get(TEMPLATE_KEY);
-	if (!obj) {
-		throw new Error(
-			`Template not found in R2 at "${TEMPLATE_KEY}". Upload it with: ` +
-				`wrangler r2 object put abyrx-bill-sheets/${TEMPLATE_KEY} --file=<template.xlsm>`,
-		);
-	}
-	cached = new Uint8Array(await obj.arrayBuffer());
-	return cached;
+	const bin = atob(TEMPLATE_XLSM_BASE64);
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+	cached = bytes;
+	return bytes;
 }

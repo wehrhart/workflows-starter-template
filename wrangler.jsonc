@@ -16,13 +16,6 @@
 		"enabled": true
 	},
 	/**
-	 * Workers AI — reads bill sheet PDFs (toMarkdown) and extracts structured
-	 * fields. https://developers.cloudflare.com/workers-ai/
-	 */
-	"ai": {
-		"binding": "AI"
-	},
-	/**
 	 * R2 — stores uploaded PDFs and the generated .xlsm output.
 	 * Create the bucket first: `wrangler r2 bucket create abyrx-bill-sheets`
 	 * https://developers.cloudflare.com/r2/

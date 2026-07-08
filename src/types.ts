@@ -59,7 +59,7 @@ export interface WorkflowUpdateMessage {
 export const PIPELINE_STEPS: StepDefinition[] = [
 	{
 		name: "read bill sheets",
-		description: "Workers AI reads each PDF into structured fields",
+		description: "Read each PDF into structured fields",
 	},
 	{
 		name: "resolve & map",

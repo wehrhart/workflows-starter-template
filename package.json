@@ -19,7 +19,8 @@
 	"dependencies": {
 		"fflate": "0.8.2",
 		"react": "19.2.1",
-		"react-dom": "19.2.1"
+		"react-dom": "19.2.1",
+		"unpdf": "^0.11.0"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.15.3",
