@@ -138,7 +138,10 @@ export default {
 			}
 		}
 
-		return Response.json({ error: "Not Found" }, { status: 404 });
+		// Everything else (the SPA and its assets) is served by the static-asset
+		// layer. We run the Worker first (run_worker_first) so /api and /ws above
+		// win; non-API requests fall through to the assets here.
+		return env.ASSETS.fetch(request);
 	},
 } satisfies ExportedHandler<Env>;
 
