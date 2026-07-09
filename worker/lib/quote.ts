@@ -21,10 +21,14 @@ export interface InputProduct {
 	id: string;
 	/** Item # column text, exactly as printed in the template. */
 	code: string;
+	/** Extra note printed as its own paragraph under the code (1604's asterisk). */
+	codeNote?: string;
 	/** Qty column text (e.g. "1 each", "1 pack"). */
 	qty: string;
-	/** Description column text, exactly as printed. */
-	description: string;
+	/** Product name — the bold first line of the Description cell. */
+	name: string;
+	/** Spec paragraph printed (not bold) below the name, exactly as in the template. */
+	spec: string;
 	/** Short label shown next to the price input in the form. */
 	label: string;
 	/** Template list price, shown as a placeholder / reference. */
@@ -36,8 +40,10 @@ export interface DerivedProduct {
 	kind: "derived";
 	id: string;
 	code: string;
+	codeNote?: string;
 	qty: string;
-	description: string;
+	name: string;
+	spec: string;
 	/** Id of the InputProduct this derives from. */
 	deriveFromId: string;
 	/** Multiplier applied to the source price (the 4-pack is ×4). */
@@ -58,8 +64,9 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-MON-1001",
 		qty: "1 each",
 		label: "MONTAGE (10g) Unit",
-		description:
-			"MONTAGE (10g) Unit(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "MONTAGE (10g) Unit",
+		spec:
+			"(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		defaultPrice: 1748,
 	},
 	{
@@ -68,8 +75,9 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-MON-1001FS",
 		qty: "1 each",
 		label: "MONTAGE Fast Set (10g) Unit",
-		description:
-			"MONTAGE Fast Set (10g) Unit (Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "MONTAGE Fast Set (10g) Unit",
+		spec:
+			"(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		defaultPrice: 1748,
 	},
 	{
@@ -77,8 +85,9 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		id: "OS-MON-1604-4PACK",
 		code: "OS-MON-1604",
 		qty: "1 pack",
-		description:
-			"MONTAGE 16g Multi-Pack (4x4g Units)(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "MONTAGE 16g Multi-Pack (4x4g Units)",
+		spec:
+			"(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		deriveFromId: "OS-MON-1604",
 		multiplier: 4,
 		defaultPrice: 3332,
@@ -89,18 +98,21 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-MON-1501FL",
 		qty: "1 each",
 		label: "MONTAGE Flowable (15g) Unit",
-		description:
-			"MONTAGE Flowable (15g) Unit(Settable, Resorbable, Hemostatic (bone) paste, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "MONTAGE Flowable (15g) Unit",
+		spec:
+			"(Settable, Resorbable, Hemostatic (bone) paste, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		defaultPrice: 2812,
 	},
 	{
 		kind: "input",
 		id: "OS-MON-1604",
-		code: "OS-MON-1604*(MONTAGE 2cc each only available on bill only basis)",
+		code: "OS-MON-1604*",
+		codeNote: "(MONTAGE 2cc each only available on bill only basis)",
 		qty: "1 each",
 		label: "MONTAGE (4g) Unit — single (also drives the 16g 4-pack ×4)",
-		description:
-			"MONTAGE (4g) Unit(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "MONTAGE (4g) Unit",
+		spec:
+			"(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		defaultPrice: 833,
 	},
 	{
@@ -109,8 +121,9 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-PER-1001",
 		qty: "1 each",
 		label: "PERMATAGE (10g) Unit",
-		description:
-			"PERMATAGE (10g) Unit(Settable, Non-Absorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free),Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "PERMATAGE (10g) Unit",
+		spec:
+			"(Settable, Non-Absorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		defaultPrice: 2214,
 	},
 	{
@@ -119,8 +132,9 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-MON-1401CT",
 		qty: "1 each",
 		label: "MONTAGE CT Sternum (14g) Unit",
-		description:
-			"MONTAGE CT Sternum (14g) Unit (Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "MONTAGE CT Sternum (14g) Unit",
+		spec:
+			"(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		defaultPrice: 1433,
 	},
 	{
@@ -129,7 +143,8 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-401",
 		qty: "1 each",
 		label: "Hemasorb 4g (2x2)",
-		description: "Hemasorb 4g (2x2)Resorbable Hemostatic Bone Putty",
+		name: "Hemasorb 4g (2x2)",
+		spec: "Resorbable Hemostatic Bone Putty",
 		defaultPrice: 224,
 	},
 	{
@@ -138,7 +153,8 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-201",
 		qty: "1 each",
 		label: "Hemasorb 2g with spatula",
-		description: "Hemasorb 2g with spatula Resorbable Hemostatic Bone Putty",
+		name: "Hemasorb 2g with spatula",
+		spec: "Resorbable Hemostatic Bone Putty",
 		defaultPrice: 263,
 	},
 	{
@@ -147,7 +163,8 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OSA-351",
 		qty: "1 each",
 		label: "HEMASORB apply 3.5g",
-		description: "HEMASORB apply 3.5g(Resorbable, synthetic, hemostatic bone putty)",
+		name: "HEMASORB apply 3.5g",
+		spec: "(Resorbable, synthetic, hemostatic bone putty)",
 		defaultPrice: 289,
 	},
 	{
@@ -156,8 +173,9 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-MON-1001XT",
 		qty: "1 each",
 		label: "MONTAGE XT (10 gram unit)",
-		description:
-			"MONTAGE XT (10 gram unit) (Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "MONTAGE XT (10 gram unit)",
+		spec:
+			"(Settable, Resorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		defaultPrice: 2246,
 	},
 	{
@@ -166,8 +184,9 @@ export const QUOTE_CATALOG: CatalogProduct[] = [
 		code: "OS-PER-2001",
 		qty: "1 each",
 		label: "PERMATAGE (20g) Unit",
-		description:
-			"PERMATAGE (20g) Unit(Settable, Non-Absorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free),Hydroxyapatite/βeta-Tricalcium Phosphate)",
+		name: "PERMATAGE (20g) Unit",
+		spec:
+			"(Settable, Non-Absorbable, Hemostatic (bone), Cohesive, Adheres to bone, Synthetic (tissue-free), Hydroxyapatite/βeta-Tricalcium Phosphate)",
 		defaultPrice: 5233,
 	},
 ];
@@ -190,7 +209,12 @@ export interface QuoteHeader {
 export interface QuoteLine {
 	qty: string;
 	code: string;
-	description: string;
+	/** Extra paragraph under the code (1604's asterisk note), if any. */
+	codeNote?: string;
+	/** Bold first line of the Description cell. */
+	name: string;
+	/** Non-bold spec paragraph below the name. */
+	spec: string;
 	/** Numeric price (already ×4 for the derived multi-pack). */
 	price: number;
 	/** Formatted price, e.g. "$1,748.00". */
@@ -288,7 +312,9 @@ export function buildQuote(
 		lines.push({
 			qty: product.qty,
 			code: product.code,
-			description: product.description,
+			codeNote: product.codeNote,
+			name: product.name,
+			spec: product.spec,
 			price,
 			priceText: formatMoney(price),
 			derived: product.kind === "derived",

@@ -91,15 +91,15 @@ describe("buildQuote", () => {
 	it("OS-MON-1604 single unit also emits the 16g 4-pack at 4x, in order", () => {
 		const quote = buildQuote(HEADER, { "OS-MON-1604": 833 }, today);
 		// The multi-pack row (code OS-MON-1604, '1 pack') comes first in template
-		// order, then the single 4g unit (its Item # carries the asterisk note).
+		// order, then the single 4g unit (its Item # carries the asterisk note as
+		// a separate paragraph).
 		expect(quote.lines.map((l) => ({ code: l.code, qty: l.qty, price: l.price }))).toEqual([
 			{ code: "OS-MON-1604", qty: "1 pack", price: 3332 },
-			{
-				code: "OS-MON-1604*(MONTAGE 2cc each only available on bill only basis)",
-				qty: "1 each",
-				price: 833,
-			},
+			{ code: "OS-MON-1604*", qty: "1 each", price: 833 },
 		]);
+		expect(quote.lines[1].codeNote).toBe(
+			"(MONTAGE 2cc each only available on bill only basis)",
+		);
 		expect(quote.lines[0].derived).toBe(true);
 		expect(quote.lines[1].derived).toBe(false);
 	});

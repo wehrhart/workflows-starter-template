@@ -320,7 +320,7 @@
 
   // ---- Price Quote tool state ----
   var Q = window.AbyrxQuote;
-  var quotePdfUrl = null;   // object URL of the generated quote PDF
+  var quoteBusy = false;    // Generate in flight (plus a short double-click cooldown)
 
   // (Re)build the downloadable .xlsm whenever the master changes, so the
   // Download control is a real link the browser can save natively.
@@ -537,8 +537,7 @@
       rows +
       '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px">' +
       '<button class="btn" id="q_go">Generate PDF</button>' +
-      '<span class="sdesc" id="q_count">0 products priced</span>' +
-      '<span id="q_result" style="margin-left:auto"></span></div>' +
+      '<span class="sdesc" id="q_count">0 products priced</span></div>' +
       '<div class="meta" id="q_error" style="color:var(--err-text);margin-top:8px"></div>' +
       '</div>' +
       '<p class="note">The quote keeps the template’s exact layout — today’s date, an expiration one month out, your hospital and address, and only the products you priced. Everything runs in your browser; nothing is uploaded.</p>' +
@@ -567,9 +566,13 @@
     if (c) c.textContent = n + (n === 1 ? " product priced" : " products priced");
   }
 
+  // ONE click: validate → build the PDF → download starts. Q.save handles the
+  // sandboxed artifact host (popup trampoline) as well as top-level pages. The
+  // button shows "Generating…" and stays disabled through a short cooldown so a
+  // double-click can't save the file twice.
   function generateQuote() {
+    if (quoteBusy) return;
     var err = document.getElementById("q_error");
-    var result = document.getElementById("q_result");
     err.textContent = "";
     var form = readQuoteForm();
     if (!form.header.hospitalName.trim()) {
@@ -581,25 +584,21 @@
       err.textContent = "Enter a price for at least one product.";
       return;
     }
+    quoteBusy = true;
+    var btn = document.getElementById("q_go");
+    if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
     try {
-      if (quotePdfUrl) { URL.revokeObjectURL(quotePdfUrl); quotePdfUrl = null; }
       var blob = Q.pdfBlob(quote);
-      quotePdfUrl = URL.createObjectURL(blob);
-      // Download immediately — we're inside the button's click gesture.
-      // Q.save escapes sandboxed-iframe hosts (like the artifact page) via a
-      // popup trampoline, so one click saves the file with the right name.
-      Q.save(quotePdfUrl, quote.fileName);
-      result.innerHTML = '<a class="btn" style="background:var(--ok-bg);color:var(--ok-text)" href="' +
-        quotePdfUrl + '" download="' + esc(quote.fileName) + '" id="q_again">Saved “' +
-        esc(quote.fileName) + '” — download again</a>';
-      var again = document.getElementById("q_again");
-      if (again) again.onclick = function (e) {
-        e.preventDefault();
-        Q.save(quotePdfUrl, quote.fileName);
-      };
+      Q.save(blob, quote.fileName);
     } catch (e) {
-      err.textContent = "Could not generate the PDF: " + String((e && e.message) || e);
+      err.textContent = "Could not generate the quote PDF. Please try again. (" +
+        String((e && e.message) || e) + ")";
     }
+    setTimeout(function () {
+      quoteBusy = false;
+      var b = document.getElementById("q_go");
+      if (b) { b.disabled = false; b.textContent = "Generate PDF"; }
+    }, 900);
   }
 
   function render() {
@@ -702,13 +701,8 @@
     if (r === "price-quote") {
       var go = document.getElementById("q_go");
       if (go) go.onclick = generateQuote;
-      // Editing a price updates the count and invalidates a stale download.
       Array.prototype.forEach.call(document.querySelectorAll("[data-price]"), function (el) {
-        el.oninput = function () {
-          updateQuoteCount();
-          var result = document.getElementById("q_result");
-          if (result) result.innerHTML = "";
-        };
+        el.oninput = updateQuoteCount;
       });
     }
   }

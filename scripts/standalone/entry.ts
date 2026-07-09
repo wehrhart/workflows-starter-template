@@ -15,7 +15,7 @@ import type { BillSheet, UploadRow, MissingRow } from "../../worker/lib/types";
 import { QUOTE_INPUTS, buildQuote, parsePrice, formatMoney } from "../../worker/lib/quote";
 import type { PriceMap, QuoteHeader } from "../../worker/lib/quote";
 import { buildQuotePdf, buildQuotePdfBlob } from "../../src/tools/quote-pdf";
-import { saveBlobUrl } from "../../src/tools/save-file";
+import { saveBlob } from "../../src/tools/save-file";
 
 function base64ToBytes(b64: string): Uint8Array {
 	const bin = atob(b64);
@@ -61,7 +61,7 @@ export const AbyrxQuote = {
 		buildQuote(header, prices, today ?? new Date()),
 	pdf: buildQuotePdf,
 	pdfBlob: buildQuotePdfBlob,
-	/** Download a blob URL as a named file, escaping sandboxed-iframe hosts. */
-	save: saveBlobUrl,
+	/** Download a Blob as a named file, escaping sandboxed-iframe hosts. */
+	save: saveBlob,
 };
 (globalThis as unknown as { AbyrxQuote: typeof AbyrxQuote }).AbyrxQuote = AbyrxQuote;

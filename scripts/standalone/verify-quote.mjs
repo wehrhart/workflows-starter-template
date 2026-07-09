@@ -1,9 +1,11 @@
 /**
  * Drive the Price Quote tool in the standalone page, like a user would:
- * fill the form, hit Generate PDF, and expect the file to save in ONE click.
+ * fill the form, click Generate PDF ONCE, and expect the download to start —
+ * no second click, no fallback link.
  *
- * Phase 1 runs the page top-level (plain <a download> path). Phase 2 embeds it
- * in a cross-origin iframe whose sandbox BLOCKS downloads (like the hosted
+ * Phase 1 runs the page top-level (plain <a download> path) and checks that a
+ * rapid double-click yields exactly ONE download. Phase 2 embeds the page in a
+ * cross-origin iframe whose sandbox BLOCKS downloads (like the hosted
  * artifact) — there the popup-trampoline must deliver the download instead.
  */
 import { chromium } from "playwright";
@@ -36,11 +38,15 @@ async function fill(scope) {
 	await scope.locator('[data-price="OS-401"]').fill("224");
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // ---- Phase 1: top-level page ----
 {
 	const page = await browser.newPage({ acceptDownloads: true });
 	const errors = [];
 	const external = [];
+	const downloads = [];
+	page.on("download", (d) => downloads.push(d));
 	page.on("pageerror", (e) => errors.push(String(e)));
 	page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 	page.on("request", (r) => {
@@ -52,10 +58,12 @@ async function fill(scope) {
 		.locator(".toolcard .tname", { hasText: "Price Quote Generator" })
 		.count();
 	await fill(page);
-	const [dl] = await Promise.all([
-		page.waitForEvent("download", { timeout: 10000 }),
-		page.locator("#q_go").click(),
-	]);
+
+	// ONE click → download.
+	await page.locator("#q_go").click();
+	const deadline = Date.now() + 8000;
+	while (!downloads.length && Date.now() < deadline) await sleep(100);
+	const dl = downloads[0];
 	const stream = await dl.createReadStream();
 	const chunks = [];
 	for await (const c of stream) chunks.push(c);
@@ -68,6 +76,16 @@ async function fill(scope) {
 	console.log("one-click download name:", dl.suggestedFilename());
 	console.log("pdf bytes:", bytes.length, "magic:", bytes.slice(0, 5).toString("latin1"));
 	console.log("saved:", outPath);
+
+	// Rapid double-click (after cooldown) must yield exactly ONE download.
+	await sleep(1100);
+	downloads.length = 0;
+	await page.locator("#q_go").evaluate((btn) => {
+		btn.click();
+		btn.click(); // second click lands while the button is disabled
+	});
+	await sleep(2500);
+	console.log("rapid double-click downloads (want 1):", downloads.length);
 	console.log("external network requests:", external.length ? external : "(none)");
 	console.log("page errors:", errors.length ? errors : "(none)");
 	await page.close();
@@ -88,30 +106,13 @@ async function fill(scope) {
 	const frame = page.frameLocator("#f");
 	await fill(frame);
 	await frame.locator("#q_go").click();
-	await frame.locator("#q_result a").waitFor({ timeout: 8000 });
-	// give the trampoline popup a moment to fire its download
 	const deadline = Date.now() + 8000;
-	while (!downloads.length && Date.now() < deadline) {
-		await new Promise((r) => setTimeout(r, 200));
-	}
+	while (!downloads.length && Date.now() < deadline) await sleep(200);
 	console.log("== sandboxed iframe (downloads blocked) ==");
 	console.log(
 		downloads.length
 			? "one-click download via trampoline → " + downloads[0].suggestedFilename()
 			: "NO download",
-	);
-
-	// "download again" must work with a plain left-click too
-	downloads.length = 0;
-	await frame.locator("#q_result a").click();
-	const deadline2 = Date.now() + 8000;
-	while (!downloads.length && Date.now() < deadline2) {
-		await new Promise((r) => setTimeout(r, 200));
-	}
-	console.log(
-		downloads.length
-			? "download-again link → " + downloads[0].suggestedFilename()
-			: "download-again link: NO download",
 	);
 	await ctx.close();
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
 	QUOTE_INPUTS,
 	buildQuote,
@@ -8,7 +8,7 @@ import {
 	type QuoteHeader,
 } from "../../worker/lib/quote";
 import { buildQuotePdfBlob } from "./quote-pdf";
-import { saveBlobUrl } from "./save-file";
+import { saveBlob } from "./save-file";
 
 const EMPTY_HEADER: QuoteHeader = {
 	hospitalName: "",
@@ -53,15 +53,8 @@ function Field({
 export function PriceQuote() {
 	const [header, setHeader] = useState<QuoteHeader>(EMPTY_HEADER);
 	const [prices, setPrices] = useState<Record<string, string>>({});
-	const [pdf, setPdf] = useState<{ url: string; fileName: string; count: number } | null>(null);
+	const [isGenerating, setIsGenerating] = useState(false);
 	const [error, setError] = useState<string | null>(null);
-
-	// Revoke the previous object URL whenever we replace it or unmount.
-	useEffect(() => {
-		return () => {
-			if (pdf) URL.revokeObjectURL(pdf.url);
-		};
-	}, [pdf]);
 
 	const setField = (k: keyof QuoteHeader, v: string) =>
 		setHeader((h) => ({ ...h, [k]: v }));
@@ -72,7 +65,14 @@ export function PriceQuote() {
 		[prices],
 	);
 
-	const generate = () => {
+	/**
+	 * ONE click: validate → build the PDF → hand it to the browser as a download.
+	 * saveBlob is called synchronously within this click's gesture (required for
+	 * sandboxed-iframe hosts like the artifact page). The button stays disabled
+	 * briefly afterwards so a double-click can't save the file twice.
+	 */
+	const handleDownloadQuote = () => {
+		if (isGenerating) return;
 		setError(null);
 		if (!header.hospitalName.trim()) {
 			setError("Enter the hospital name — it's used in the quote and the file name.");
@@ -85,22 +85,18 @@ export function PriceQuote() {
 			setError("Enter a price for at least one product.");
 			return;
 		}
+		setIsGenerating(true);
 		try {
 			const blob = buildQuotePdfBlob(quote);
-			const url = URL.createObjectURL(blob);
-			// Download immediately — we're inside the button's click gesture.
-			// saveBlobUrl handles sandboxed-iframe hosts (artifact page) too.
-			saveBlobUrl(url, quote.fileName);
-			setPdf({ url, fileName: quote.fileName, count: quote.lines.length });
+			saveBlob(blob, quote.fileName);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Could not generate the PDF.");
+			console.error("Failed to download quote PDF", err);
+			setError("Could not generate the quote PDF. Please try again.");
+		} finally {
+			// Cooldown: keep the button disabled long enough that an accidental
+			// double-click can't fire a second identical download.
+			setTimeout(() => setIsGenerating(false), 900);
 		}
-	};
-
-	// Any edit invalidates a previously generated PDF, so the download always
-	// reflects the current form.
-	const invalidate = () => {
-		if (pdf) setPdf(null);
 	};
 
 	return (
@@ -115,7 +111,7 @@ export function PriceQuote() {
 				</p>
 			</div>
 
-			<div className="space-y-6" onInput={invalidate}>
+			<div className="space-y-6">
 				{/* Hospital details */}
 				<div className="rounded-2xl border border-neutral-200 bg-white/80 p-5 shadow-sm backdrop-blur dark:border-neutral-800 dark:bg-neutral-900/70">
 					<div className="mb-3 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
@@ -171,10 +167,7 @@ export function PriceQuote() {
 					</p>
 					<div className="divide-y divide-neutral-100 dark:divide-neutral-800">
 						{QUOTE_INPUTS.map((p) => (
-							<div
-								key={p.id}
-								className="flex items-center gap-3 py-2.5"
-							>
+							<div key={p.id} className="flex items-center gap-3 py-2.5">
 								<div className="min-w-0 flex-1">
 									<div className="truncate text-sm font-medium text-neutral-800 dark:text-neutral-100">
 										{p.code}
@@ -204,35 +197,24 @@ export function PriceQuote() {
 
 				<div className="flex flex-wrap items-center gap-3">
 					<button
-						onClick={generate}
-						className="rounded-xl bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+						type="button"
+						onClick={handleDownloadQuote}
+						disabled={isGenerating}
+						className="rounded-xl bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
 					>
-						Generate PDF
+						{isGenerating ? "Generating…" : "Generate PDF"}
 					</button>
 					<span className="text-xs text-neutral-500 dark:text-neutral-400">
 						{filledCount} product{filledCount === 1 ? "" : "s"} priced
 					</span>
-
-					{pdf && (
-						<a
-							href={pdf.url}
-							download={pdf.fileName}
-							onClick={(e) => {
-								e.preventDefault();
-								saveBlobUrl(pdf.url, pdf.fileName);
-							}}
-							className="ml-auto rounded-xl border border-emerald-500 bg-emerald-50 px-5 py-2.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-						>
-							Saved “{pdf.fileName}” ({pdf.count} line{pdf.count === 1 ? "" : "s"}) — download again
-						</a>
-					)}
 				</div>
 			</div>
 
 			<p className="mt-4 text-xs text-neutral-400">
 				The quote keeps the template’s exact layout — today’s date, an expiration
 				one month out, your hospital and address, and only the products you
-				priced. Everything runs in your browser; nothing is uploaded.
+				priced. One click downloads “[hospital name] quote.pdf”. Everything runs
+				in your browser; nothing is uploaded.
 			</p>
 		</div>
 	);

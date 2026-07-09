@@ -162,6 +162,25 @@ function renderQuoteDoc(quote: Quote): jsPDF {
 	// floated 6pt (121 twips) below the payment-terms block. Header row is the
 	// "ColumnHeadings" style: bold 8pt white, centered, on #00B0F0. Cell margins
 	// are the template's 43/115 twips (2.15pt / 5.75pt).
+	//
+	// Description cells mix weights like the template: the product NAME is a bold
+	// line, then a blank line, then the spec paragraph in regular weight. autoTable
+	// can only style whole cells, so we pre-split the lines (bold metrics for the
+	// name, regular for the spec), let autoTable size the row from them, then blank
+	// the cell and draw the text ourselves in didDrawCell.
+	const DESC_INNER_W = ITEM_COLS[2] - 2 * 5.75;
+	const LINE_H = 8 * doc.getLineHeightFactor(); // 8pt × 1.15
+	const descParts = quote.lines.map((l) => {
+		doc.setFontSize(8);
+		doc.setFont("helvetica", "bold");
+		const nameLines = doc.splitTextToSize(sanitize(l.name), DESC_INNER_W) as string[];
+		doc.setFont("helvetica", "normal");
+		const specLines = l.spec
+			? (doc.splitTextToSize(sanitize(l.spec), DESC_INNER_W) as string[])
+			: [];
+		return { nameLines, specLines };
+	});
+
 	autoTable(doc, {
 		startY: netY + 6,
 		margin: { top: 108, left: ITEM_TABLE_X, right: ITEM_TABLE_X, bottom: 92 },
@@ -190,16 +209,45 @@ function renderQuoteDoc(quote: Quote): jsPDF {
 		columnStyles: {
 			0: { cellWidth: ITEM_COLS[0] },
 			1: { cellWidth: ITEM_COLS[1] },
-			2: { cellWidth: ITEM_COLS[2], fontStyle: "bold" },
+			2: { cellWidth: ITEM_COLS[2] },
 			3: { cellWidth: ITEM_COLS[3], fontSize: 9 },
 		},
 		head: [["Qty", "Item #", "Description", "Price"]],
-		body: quote.lines.map((l) => [
+		body: quote.lines.map((l, i) => [
 			sanitize(l.qty),
-			sanitize(l.code),
-			sanitize(l.description),
+			// The 1604 asterisk note is its own paragraph under the code.
+			l.codeNote ? sanitize(l.code) + "\n\n" + sanitize(l.codeNote) : sanitize(l.code),
+			// Placeholder rows sized like the real content; drawn manually below.
+			[...descParts[i].nameLines, "", ...descParts[i].specLines].join("\n"),
 			l.priceText,
 		]),
+		willDrawCell: (data) => {
+			if (data.section === "body" && data.column.index === 2) {
+				data.cell.text = []; // suppress the uniform-style draw
+			}
+		},
+		didDrawCell: (data) => {
+			if (data.section !== "body" || data.column.index !== 2) return;
+			const { nameLines, specLines } = descParts[data.row.index];
+			const totalLines = nameLines.length + (specLines.length ? 1 + specLines.length : 0);
+			const cx = data.cell.x + data.cell.width / 2;
+			// Vertically center the block, first baseline ≈ top + 0.8 × line height.
+			let y =
+				data.cell.y + (data.cell.height - totalLines * LINE_H) / 2 + LINE_H * 0.8;
+			doc.setFontSize(8);
+			doc.setTextColor(0, 0, 0);
+			doc.setFont("helvetica", "bold");
+			for (const line of nameLines) {
+				doc.text(line, cx, y, { align: "center" });
+				y += LINE_H;
+			}
+			y += LINE_H; // the blank line between name and spec
+			doc.setFont("helvetica", "normal");
+			for (const line of specLines) {
+				doc.text(line, cx, y, { align: "center" });
+				y += LINE_H;
+			}
+		},
 		didDrawPage: () => drawHeaderFooter(doc),
 	});
 
