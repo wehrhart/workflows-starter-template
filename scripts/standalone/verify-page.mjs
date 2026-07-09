@@ -46,11 +46,12 @@ const dupRow = await page.locator("table tbody tr").first().innerText();
 const dupChips = await page.locator(".chips").innerText();
 const masterMetaAfter = await page.locator(".master .meta").innerText();
 
-// Download the .xlsm and inspect its first bytes.
-const [dl] = await Promise.all([
-	page.waitForEvent("download"),
-	page.locator("#dl").click(),
-]);
+// Download the .xlsm (opens in a fresh tab that saves it) and inspect bytes.
+const dlPromise = new Promise((res) => {
+	page.context().on("page", (p) => p.on("download", (d) => res(d)));
+});
+await page.locator("#dl").click();
+const dl = await dlPromise;
 const stream = await dl.createReadStream();
 const chunks = [];
 for await (const c of stream) chunks.push(c);
