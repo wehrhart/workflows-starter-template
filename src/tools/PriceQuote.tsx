@@ -55,6 +55,7 @@ export function PriceQuote() {
 	const [prices, setPrices] = useState<Record<string, string>>({});
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [pdf, setPdf] = useState<{ url: string; fileName: string } | null>(null);
 
 	const setField = (k: keyof QuoteHeader, v: string) =>
 		setHeader((h) => ({ ...h, [k]: v }));
@@ -88,7 +89,12 @@ export function PriceQuote() {
 		setIsGenerating(true);
 		try {
 			const blob = buildQuotePdfBlob(quote);
+			// Try to start the download right away (works where the host allows
+			// it)… and always show a real link too — some hosts block every
+			// page-initiated download, but right-click → download still works.
 			saveBlob(blob, quote.fileName);
+			if (pdf) URL.revokeObjectURL(pdf.url);
+			setPdf({ url: URL.createObjectURL(blob), fileName: quote.fileName });
 		} catch (err) {
 			console.error("Failed to download quote PDF", err);
 			setError("Could not generate the quote PDF. Please try again.");
@@ -207,7 +213,26 @@ export function PriceQuote() {
 					<span className="text-xs text-neutral-500 dark:text-neutral-400">
 						{filledCount} product{filledCount === 1 ? "" : "s"} priced
 					</span>
+
+					{pdf && (
+						<a
+							href={pdf.url}
+							download={pdf.fileName}
+							target="_blank"
+							rel="noopener"
+							className="ml-auto rounded-xl border border-emerald-500 bg-emerald-50 px-5 py-2.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+						>
+							Download “{pdf.fileName}”
+						</a>
+					)}
 				</div>
+
+				{pdf && (
+					<p className="text-xs text-neutral-500 dark:text-neutral-400">
+						If nothing downloaded automatically, right-click (two-finger click)
+						the green link and choose “Download Linked File”.
+					</p>
+				)}
 			</div>
 
 			<p className="mt-4 text-xs text-neutral-400">

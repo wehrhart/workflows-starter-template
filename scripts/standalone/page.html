@@ -321,6 +321,7 @@
   // ---- Price Quote tool state ----
   var Q = window.AbyrxQuote;
   var quoteBusy = false;    // Generate in flight (plus a short double-click cooldown)
+  var quotePdfUrl = null;   // object URL behind the visible download link
 
   // (Re)build the downloadable .xlsm whenever the master changes, so the
   // Download control is a real link the browser can save natively.
@@ -537,7 +538,9 @@
       rows +
       '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px">' +
       '<button class="btn" id="q_go">Generate PDF</button>' +
-      '<span class="sdesc" id="q_count">0 products priced</span></div>' +
+      '<span class="sdesc" id="q_count">0 products priced</span>' +
+      '<span id="q_result" style="margin-left:auto"></span></div>' +
+      '<div class="meta" id="q_hint" style="margin-top:8px"></div>' +
       '<div class="meta" id="q_error" style="color:var(--err-text);margin-top:8px"></div>' +
       '</div>' +
       '<p class="note">The quote keeps the template’s exact layout — today’s date, an expiration one month out, your hospital and address, and only the products you priced. Everything runs in your browser; nothing is uploaded.</p>' +
@@ -589,7 +592,22 @@
     if (btn) { btn.disabled = true; btn.textContent = "Generating…"; }
     try {
       var blob = Q.pdfBlob(quote);
+      if (quotePdfUrl) { URL.revokeObjectURL(quotePdfUrl); }
+      quotePdfUrl = URL.createObjectURL(blob);
+      // Try to start the download right away (works where the host allows it)…
       Q.save(blob, quote.fileName);
+      // …but ALWAYS show a real download link too. Some hosts (the artifact
+      // sandbox) block every page-initiated download; the link still saves via
+      // right-click / two-finger click → "Download Linked File".
+      var result = document.getElementById("q_result");
+      if (result) {
+        result.innerHTML = '<a class="btn" style="background:var(--ok-bg);color:var(--ok-text)" href="' +
+          quotePdfUrl + '" download="' + esc(quote.fileName) + '" target="_blank" rel="noopener">Download “' +
+          esc(quote.fileName) + '”</a>';
+      }
+      var hint = document.getElementById("q_hint");
+      if (hint) hint.textContent =
+        "If nothing downloaded automatically, right-click (two-finger click) the green link and choose “Download Linked File”.";
     } catch (e) {
       err.textContent = "Could not generate the quote PDF. Please try again. (" +
         String((e && e.message) || e) + ")";
@@ -701,8 +719,15 @@
     if (r === "price-quote") {
       var go = document.getElementById("q_go");
       if (go) go.onclick = generateQuote;
+      // Editing a price updates the count and clears a now-stale download link.
       Array.prototype.forEach.call(document.querySelectorAll("[data-price]"), function (el) {
-        el.oninput = updateQuoteCount;
+        el.oninput = function () {
+          updateQuoteCount();
+          var r = document.getElementById("q_result");
+          if (r) r.innerHTML = "";
+          var h = document.getElementById("q_hint");
+          if (h) h.textContent = "";
+        };
       });
     }
   }
