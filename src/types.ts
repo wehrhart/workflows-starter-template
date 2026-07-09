@@ -22,7 +22,7 @@ export interface FileSummary {
 	locationId: string | null;
 	locationName: string | null;
 	lineItems: number;
-	routed: "upload" | "missing-case-id";
+	routed: "upload" | "missing-case-id" | "duplicate";
 	note?: string;
 }
 
