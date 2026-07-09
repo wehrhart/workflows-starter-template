@@ -16,12 +16,26 @@ import type { Quote } from "../../worker/lib/quote";
 import { QUOTE_LOGO_JPEG_BASE64, QUOTE_MARK_JPEG_BASE64 } from "../../worker/assets/quote-logo";
 
 // US Letter in points (72pt/inch). Margins mirror the template: 1" sides,
-// 1.5" top/bottom, header 0.5" from the top edge.
+// 1.5" top/bottom, header 0.5" from the top edge. All geometry below is taken
+// from the template's OOXML (twips ÷ 20 = points) so the output is identical.
 const PAGE_W = 612;
 const LEFT = 72;
 const RIGHT = 72;
 const CONTENT_W = PAGE_W - LEFT - RIGHT; // 468
 const CYAN: [number, number, number] = [0, 176, 240]; // #00B0F0
+const GRAY: [number, number, number] = [64, 64, 64]; // #404040 (meta text)
+
+// Meta table grid (5760 | 3481 | 250 twips): the "To" label column ends at
+// 288pt, the right-aligned value column at 288 + 174 = 462pt from the margin.
+const META_LABEL_RIGHT = LEFT + 288; // 360 — "To" right-aligns here
+const META_VALUE_RIGHT = LEFT + 462; // 534 — dates/address right-align here
+
+// Item table: grid cols 881/1635/4200/2885 twips = 44.05/81.75/210/144.25pt,
+// 480.05pt total, centered on the page (tblpPr tblpXSpec="center"), floated
+// 121 twips ≈ 6pt below the payment-terms block.
+const ITEM_COLS = [44.05, 81.75, 210, 144.25];
+const ITEM_TABLE_W = ITEM_COLS[0] + ITEM_COLS[1] + ITEM_COLS[2] + ITEM_COLS[3];
+const ITEM_TABLE_X = (PAGE_W - ITEM_TABLE_W) / 2;
 
 // Header wordmark: template renders it 2.62" × 1.01", left-aligned in the header.
 const LOGO_W = 188.6;
@@ -80,47 +94,78 @@ function drawHeaderFooter(doc: jsPDF) {
 function renderQuoteDoc(quote: Quote): jsPDF {
 	const doc = new jsPDF({ unit: "pt", format: "letter" });
 
-	// ---- Meta block (borderless, matching the template's first table) ----
+	// ---- Meta block (matching the template's first table exactly) ----
 	// The header wordmark + footer are painted by autoTable's didDrawPage hook
 	// (which fires for page 1 too), so every page — including any overflow page —
 	// gets the brand chrome.
-	const RIGHT_COL_X = LEFT + 288; // template col0 is 4" wide; value column follows
+	//
+	// Date / Expiration: "DateandNumber" style — right-aligned, 8pt, #404040,
+	// 0.2pt letter spacing. Body starts at the 1.5" top margin (108pt).
 	doc.setFont("helvetica", "normal");
-	doc.setFontSize(11);
+	doc.setFontSize(8);
+	doc.setTextColor(...GRAY);
+	doc.text(`Date: ${quote.dateText}`, META_VALUE_RIGHT, 118, {
+		align: "right",
+		charSpace: 0.2,
+	});
+	doc.text(`Expiration Date: ${quote.expirationText}`, META_VALUE_RIGHT, 129, {
+		align: "right",
+		charSpace: 0.2,
+	});
+
+	// "To": Heading2 style — bold 8pt #404040, right-aligned in the label column.
+	const blockTop = 142;
+	doc.setFont("helvetica", "bold");
+	doc.text("To", META_LABEL_RIGHT, blockTop, { align: "right" });
+
+	// Address: "Right-aligned text" style — 8pt #404040, 12pt line pitch, with
+	// the template's blank line between the hospital name and the street.
+	doc.setFont("helvetica", "normal");
+	let addrY = blockTop;
+	quote.toLines.forEach((line, i) => {
+		doc.text(sanitize(line), META_VALUE_RIGHT, addrY, { align: "right" });
+		addrY += i === 0 ? 24 : 12; // blank template line after the name
+	});
 	doc.setTextColor(0, 0, 0);
 
-	let y = 128;
-	doc.text(`Date: ${quote.dateText}`, RIGHT_COL_X, y);
-	y += 15;
-	doc.text(`Expiration Date: ${quote.expirationText}`, RIGHT_COL_X, y);
+	// The template pads the address cell with three empty 12pt lines before the
+	// payment-terms rows, which span the content width (row width 9350 twips).
+	const barY = Math.max(addrY - 12, blockTop + 36) + 39;
+	const barW = CONTENT_W - 0.5; // row width 9350 twips = 467.5pt
+	const barX = LEFT;
 
-	y += 20;
-	doc.text("To", LEFT, y);
-	let addrY = y;
-	for (const line of quote.toLines) {
-		doc.text(sanitize(line), RIGHT_COL_X, addrY);
-		addrY += 15;
-	}
-
-	// Cyan "Payment Terms" bar spanning the content width.
-	const barY = Math.max(y, addrY - 15) + 12;
-	const barH = 18;
+	// Cyan "Payment Terms" bar: "ColumnHeadings" style — bold 8pt WHITE, centered.
+	const barH = 14.4;
 	doc.setFillColor(...CYAN);
-	doc.rect(LEFT, barY, CONTENT_W, barH, "F");
-	doc.setFontSize(11);
-	doc.text("Payment Terms", LEFT + 6, barY + 13);
+	doc.setDrawColor(...CYAN);
+	doc.setLineWidth(0.5);
+	doc.rect(barX, barY, barW, barH, "FD");
+	doc.setFont("helvetica", "bold");
+	doc.setFontSize(8);
+	doc.setTextColor(255, 255, 255);
+	doc.text("Payment Terms", barX + barW / 2, barY + barH / 2 + 2.9, { align: "center" });
 
-	// "30 Days Net", centered, 9pt (template uses sz 18 = 9pt here).
-	const netY = barY + barH;
+	// "30 Days Net" box: white cell outlined in cyan (the template's tblPrEx puts
+	// 0.5pt #00B0F0 borders around both payment-terms rows). 9pt black, centered.
+	const boxY = barY + barH;
+	const boxH = 17;
+	doc.setFillColor(255, 255, 255);
+	doc.rect(barX, boxY, barW, boxH, "FD");
+	doc.setFont("helvetica", "normal");
 	doc.setFontSize(9);
-	doc.text("30 Days Net", PAGE_W / 2, netY + 12, { align: "center" });
+	doc.setTextColor(0, 0, 0);
+	doc.text("30 Days Net", barX + barW / 2, boxY + boxH / 2 + 3.2, { align: "center" });
+	const netY = boxY + boxH;
 
 	// ---- Item table (bordered, matching the template's second table) ----
-	// Column widths are the template grid ratios (881:1635:4200:2885) scaled to
-	// the 468pt content width.
+	// Grid columns 881/1635/4200/2885 twips, 480pt total, centered on the page,
+	// floated 6pt (121 twips) below the payment-terms block. Header row is the
+	// "ColumnHeadings" style: bold 8pt white, centered, on #00B0F0. Cell margins
+	// are the template's 43/115 twips (2.15pt / 5.75pt).
 	autoTable(doc, {
-		startY: netY + 26,
-		margin: { top: 108, left: LEFT, right: RIGHT, bottom: 92 },
+		startY: netY + 6,
+		margin: { top: 108, left: ITEM_TABLE_X, right: ITEM_TABLE_X, bottom: 92 },
+		tableWidth: ITEM_TABLE_W,
 		theme: "grid",
 		tableLineColor: [0, 0, 0],
 		tableLineWidth: 0.5,
@@ -132,21 +177,21 @@ function renderQuoteDoc(quote: Quote): jsPDF {
 			valign: "middle",
 			lineColor: [0, 0, 0],
 			lineWidth: 0.5,
-			cellPadding: { top: 3, right: 4, bottom: 3, left: 4 },
+			cellPadding: { top: 2.15, right: 5.75, bottom: 2.15, left: 5.75 },
 			overflow: "linebreak",
 		},
 		headStyles: {
 			fillColor: CYAN,
-			textColor: [0, 0, 0],
-			fontStyle: "normal",
-			fontSize: 11,
-			halign: "left",
+			textColor: [255, 255, 255],
+			fontStyle: "bold",
+			fontSize: 8,
+			halign: "center",
 		},
 		columnStyles: {
-			0: { cellWidth: 42.9 },
-			1: { cellWidth: 79.7 },
-			2: { cellWidth: 204.7, fontStyle: "bold" },
-			3: { cellWidth: 140.7, fontSize: 9 },
+			0: { cellWidth: ITEM_COLS[0] },
+			1: { cellWidth: ITEM_COLS[1] },
+			2: { cellWidth: ITEM_COLS[2], fontStyle: "bold" },
+			3: { cellWidth: ITEM_COLS[3], fontSize: 9 },
 		},
 		head: [["Qty", "Item #", "Description", "Price"]],
 		body: quote.lines.map((l) => [

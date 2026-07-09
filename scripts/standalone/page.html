@@ -585,10 +585,18 @@
       if (quotePdfUrl) { URL.revokeObjectURL(quotePdfUrl); quotePdfUrl = null; }
       var blob = Q.pdfBlob(quote);
       quotePdfUrl = URL.createObjectURL(blob);
-      // A real <a download> the browser saves on a genuine tap (Safari + iframes).
+      // Download immediately — we're inside the button's click gesture, so the
+      // browser saves the file in one click. Keep a real <a download> below as
+      // a fallback ("download again") for hosts that block the scripted click.
+      var a = document.createElement("a");
+      a.href = quotePdfUrl;
+      a.download = quote.fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       result.innerHTML = '<a class="btn" style="background:var(--ok-bg);color:var(--ok-text)" href="' +
-        quotePdfUrl + '" download="' + esc(quote.fileName) + '" target="_blank" rel="noopener">Download “' +
-        esc(quote.fileName) + '” (' + quote.lines.length + ' line' + (quote.lines.length === 1 ? "" : "s") + ')</a>';
+        quotePdfUrl + '" download="' + esc(quote.fileName) + '" target="_blank" rel="noopener">Saved “' +
+        esc(quote.fileName) + '” — download again</a>';
     } catch (e) {
       err.textContent = "Could not generate the PDF: " + String((e && e.message) || e);
     }
