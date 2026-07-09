@@ -384,7 +384,7 @@
     var dl = (empty || !masterUrl)
       ? '<button class="btn" id="dl" disabled>Download master sheet</button>'
       : '<a class="btn" id="dl" href="' + masterUrl +
-        '" download="Abyrx_Bill_Only_Upload.xlsm" target="_blank" rel="noopener">Download master sheet</a>';
+        '" download="Abyrx_Bill_Only_Upload.xlsm">Download master sheet</a>';
     var err = downloadError
       ? '<div class="meta" style="color:var(--err-text);margin-top:8px">Could not build the spreadsheet: ' +
         esc(downloadError) + '</div>'
