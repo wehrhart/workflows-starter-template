@@ -292,6 +292,24 @@
   var dragOver = false;
   var phase = "idle";       // idle | running | done
   var lastBatch = null;     // { added, addedMissing, files, errors }
+  var masterUrl = null;     // object URL of the built .xlsm, ready for a real tap
+  var downloadError = null;
+
+  // (Re)build the downloadable .xlsm whenever the master changes, so the
+  // Download control is a real link the browser can save natively.
+  function refreshMasterUrl() {
+    if (masterUrl) { URL.revokeObjectURL(masterUrl); masterUrl = null; }
+    downloadError = null;
+    if (!master.uploadRows.length && !master.missingRows.length) return;
+    try {
+      var bytes = K.xlsm(master.uploadRows, master.missingRows);
+      masterUrl = URL.createObjectURL(
+        new Blob([bytes], { type: "application/vnd.ms-excel.sheet.macroEnabled.12" })
+      );
+    } catch (e) {
+      downloadError = String((e && e.message) || e);
+    }
+  }
 
   function load() {
     try {
@@ -361,10 +379,19 @@
       ? "Empty — process a bill sheet to start filling it."
       : rows + " row" + (rows === 1 ? "" : "s") + " from " + sheets + " bill sheet" +
         (sheets === 1 ? "" : "s") + (missing ? " · " + missing + " missing Case ID" : "");
+    // A real <a download> the browser handles on a genuine tap — works in
+    // Safari (incl. iOS) and sandboxed iframes, unlike a scripted click.
+    var dl = (empty || !masterUrl)
+      ? '<button class="btn" id="dl" disabled>Download master sheet</button>'
+      : '<a class="btn" id="dl" href="' + masterUrl +
+        '" download="Abyrx_Bill_Only_Upload.xlsm" target="_blank" rel="noopener">Download master sheet</a>';
+    var err = downloadError
+      ? '<div class="meta" style="color:var(--err-text);margin-top:8px">Could not build the spreadsheet: ' +
+        esc(downloadError) + '</div>'
+      : "";
     return '<div class="card master" style="margin-bottom:24px">' +
-      '<div><div class="label">Master sheet</div><div class="meta">' + esc(meta) + '</div></div>' +
-      '<div class="actions">' +
-      '<button class="btn" id="dl" ' + (empty ? "disabled" : "") + '>Download master sheet</button>' +
+      '<div><div class="label">Master sheet</div><div class="meta">' + esc(meta) + '</div>' + err + '</div>' +
+      '<div class="actions">' + dl +
       '<button class="btn ghost" id="clr" ' + (empty ? "disabled" : "") + '>Clear</button>' +
       '</div></div>';
   }
@@ -499,21 +526,8 @@
     };
     staged = [];
     phase = "done";
+    refreshMasterUrl();
     render();
-  }
-
-  function download() {
-    try {
-      var bytes = K.xlsm(master.uploadRows, master.missingRows);
-      var blob = new Blob([bytes], { type: "application/vnd.ms-excel.sheet.macroEnabled.12" });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url; a.download = "Abyrx_Bill_Only_Upload.xlsm";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
-    } catch (e) {
-      alert("Could not build the spreadsheet: " + (e && e.message || e));
-    }
   }
 
   function clearMaster() {
@@ -521,6 +535,7 @@
     master = { uploadRows: [], missingRows: [], files: [] };
     lastBatch = null;
     save();
+    refreshMasterUrl();
     render();
   }
 
@@ -541,8 +556,6 @@
       if (file) file.onchange = function (e) { addFiles(e.target.files); };
       var go = document.getElementById("go");
       if (go) go.onclick = process;
-      var dl = document.getElementById("dl");
-      if (dl) dl.onclick = download;
       var clr = document.getElementById("clr");
       if (clr) clr.onclick = clearMaster;
       var more = document.getElementById("more");
@@ -566,6 +579,7 @@
   });
   window.addEventListener("hashchange", function () { phase = "idle"; lastBatch = null; render(); });
 
+  refreshMasterUrl();
   render();
 })();
 </script>
