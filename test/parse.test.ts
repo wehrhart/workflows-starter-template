@@ -44,6 +44,13 @@ describe("parseBillSheetText", () => {
 		expect(s.caseId).toBe("80486123");
 	});
 
+	it("reads the surgeon when the apostrophe renders curly (’)", () => {
+		// Some PDFs encode "Surgeon's Name" with a curly apostrophe.
+		const text = TEXT_MISSING_CASE.replace("Su rg eo n 's N a m e", "Surgeon’s Name");
+		const s = parseBillSheetText(text, "curly.pdf");
+		expect(s.surgeonName).toBe("James Jackman");
+	});
+
 	it("takes the zip after the state, not the street number", () => {
 		const s = parseBillSheetText(TEXT_MISSING_CASE, "x.pdf");
 		expect(s.shippingZip).not.toBe("10180");

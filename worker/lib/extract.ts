@@ -16,12 +16,21 @@ export async function pdfToText(bytes: Uint8Array): Promise<string> {
 	return Array.isArray(text) ? text.join("\n") : text;
 }
 
-/** Build a spacing-tolerant regex for a label whose letters may be split by spaces. */
+/**
+ * Build a spacing-tolerant regex for a label whose letters may be split by
+ * spaces. Apostrophes are matched in any form (straight, curly, backtick) —
+ * PDF fonts often render "Surgeon's Name" with a curly ’ that would otherwise
+ * fail to match and drop the surgeon name.
+ */
 function labelRe(label: string): RegExp {
 	const chars = label
 		.replace(/\s+/g, "")
 		.split("")
-		.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+		.map((c) =>
+			/['‘’`]/.test(c)
+				? "['‘’`]"
+				: c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+		);
 	return new RegExp(chars.join("\\s*"), "gi");
 }
 

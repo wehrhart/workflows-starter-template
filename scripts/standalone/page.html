@@ -1,0 +1,562 @@
+<title>Abyrx Tools</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --surface: rgba(255, 255, 255, 0.8);
+    --surface-solid: #ffffff;
+    --sidebar: rgba(255, 255, 255, 0.72);
+    --border: #e5e5e5;
+    --border-strong: #d4d4d4;
+    --text: #262626;
+    --text-strong: #171717;
+    --muted: #737373;
+    --faint: #a3a3a3;
+    --dots: rgba(212, 212, 212, 0.55);
+    --btn-bg: #171717;
+    --btn-text: #ffffff;
+    --btn-hover: #404040;
+    --chip: #f5f5f5;
+    --ok-bg: #d1fae5;
+    --ok-text: #047857;
+    --warn-bg: #fef3c7;
+    --warn-text: #b45309;
+    --warn-line: #fbbf24;
+    --err-bg: #fee2e2;
+    --err-text: #dc2626;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0a0a0a;
+      --surface: rgba(23, 23, 23, 0.7);
+      --surface-solid: #171717;
+      --sidebar: rgba(23, 23, 23, 0.55);
+      --border: #262626;
+      --border-strong: #404040;
+      --text: #e5e5e5;
+      --text-strong: #f5f5f5;
+      --muted: #a3a3a3;
+      --faint: #737373;
+      --dots: rgba(64, 64, 64, 0.45);
+      --btn-bg: #ffffff;
+      --btn-text: #171717;
+      --btn-hover: #e5e5e5;
+      --chip: #262626;
+      --ok-bg: rgba(6, 78, 59, 0.45);
+      --ok-text: #6ee7b7;
+      --warn-bg: rgba(120, 53, 15, 0.45);
+      --warn-text: #fcd34d;
+      --warn-line: #b45309;
+      --err-bg: rgba(127, 29, 29, 0.4);
+      --err-text: #fca5a5;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #fafafa; --surface: rgba(255,255,255,0.8); --surface-solid: #ffffff;
+    --sidebar: rgba(255,255,255,0.72); --border: #e5e5e5; --border-strong: #d4d4d4;
+    --text: #262626; --text-strong: #171717; --muted: #737373; --faint: #a3a3a3;
+    --dots: rgba(212,212,212,0.55); --btn-bg: #171717; --btn-text: #fff; --btn-hover: #404040;
+    --chip: #f5f5f5; --ok-bg: #d1fae5; --ok-text: #047857; --warn-bg: #fef3c7;
+    --warn-text: #b45309; --warn-line: #fbbf24; --err-bg: #fee2e2; --err-text: #dc2626;
+    --shadow: 0 1px 2px rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.04);
+  }
+  :root[data-theme="dark"] {
+    --bg: #0a0a0a; --surface: rgba(23,23,23,0.7); --surface-solid: #171717;
+    --sidebar: rgba(23,23,23,0.55); --border: #262626; --border-strong: #404040;
+    --text: #e5e5e5; --text-strong: #f5f5f5; --muted: #a3a3a3; --faint: #737373;
+    --dots: rgba(64,64,64,0.45); --btn-bg: #fff; --btn-text: #171717; --btn-hover: #e5e5e5;
+    --chip: #262626; --ok-bg: rgba(6,78,59,0.45); --ok-text: #6ee7b7; --warn-bg: rgba(120,53,15,0.45);
+    --warn-text: #fcd34d; --warn-line: #b45309; --err-bg: rgba(127,29,29,0.4); --err-text: #fca5a5;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.25);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .shell { position: relative; display: flex; min-height: 100vh; }
+  .dots {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: radial-gradient(var(--dots) 1px, transparent 1px);
+    background-size: 12px 12px;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    position: relative; z-index: 10; width: 240px; flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 4px;
+    border-right: 1px solid var(--border);
+    background: var(--sidebar);
+    backdrop-filter: blur(8px);
+    padding: 24px 16px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 20px;
+    padding: 0 4px; background: none; border: 0; cursor: pointer; text-align: left;
+    font: inherit; color: var(--text-strong);
+  }
+  .brand b { font-weight: 600; }
+  .navitem {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 8px 12px; border-radius: 8px; border: 0; background: none;
+    font: inherit; font-size: 14px; font-weight: 500; text-align: left; cursor: pointer;
+    color: var(--text); transition: background-color 0.15s;
+  }
+  .navitem:hover { background: var(--chip); }
+  .navitem.active { background: var(--btn-bg); color: var(--btn-text); }
+  .navitem .ico { font-size: 16px; line-height: 1; }
+  .navitem .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .navitem.soon { color: var(--faint); cursor: default; }
+  .navitem.soon:hover { background: none; }
+  .tag {
+    font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+    background: var(--chip); color: var(--muted);
+  }
+
+  /* Main */
+  .main { position: relative; z-index: 10; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    display: none; align-items: center; justify-content: space-between;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+  }
+  .content { flex: 1; overflow-y: auto; padding: 32px 24px; }
+  .wrap { width: 100%; max-width: 768px; margin: 0 auto; }
+  .wrap-wide { max-width: 896px; }
+
+  h1.page { font-size: 18px; font-weight: 600; color: var(--text-strong); margin: 0; }
+  .sub { font-size: 14px; color: var(--muted); margin: 4px 0 0; }
+  .backlink {
+    background: none; border: 0; font: inherit; font-size: 14px; font-weight: 500;
+    color: var(--faint); cursor: pointer; padding: 0; margin-bottom: 16px;
+  }
+  .backlink:hover { color: var(--text); }
+
+  /* Cards */
+  .card {
+    border: 1px solid var(--border); border-radius: 16px;
+    background: var(--surface); backdrop-filter: blur(8px);
+    box-shadow: var(--shadow); padding: 24px;
+  }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 640px) { .grid { grid-template-columns: 1fr 1fr; } }
+  .toolcard {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    border: 1px solid var(--border); border-radius: 16px; background: var(--surface);
+    box-shadow: var(--shadow); padding: 20px; text-align: left; cursor: pointer;
+    font: inherit; color: var(--text); transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .toolcard:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+  .toolcard .emoji { font-size: 26px; }
+  .toolcard .tname { font-weight: 600; color: var(--text-strong); }
+  .toolcard .ttag { font-size: 14px; color: var(--muted); }
+  .toolcard.soon {
+    cursor: default; border-style: dashed; background: transparent; box-shadow: none;
+  }
+  .toolcard.soon:hover { transform: none; }
+  .pill-soon {
+    margin-top: 4px; font-size: 12px; font-weight: 500; color: var(--faint);
+    background: var(--chip); padding: 2px 8px; border-radius: 4px;
+  }
+
+  /* Master panel */
+  .master { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+  .master .label { font-size: 14px; font-weight: 600; color: var(--text-strong); }
+  .master .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .master .actions { display: flex; gap: 8px; }
+
+  .btn {
+    border: 0; border-radius: 12px; padding: 9px 16px; font: inherit; font-size: 14px;
+    font-weight: 500; cursor: pointer; transition: background-color 0.15s, opacity 0.15s;
+    background: var(--btn-bg); color: var(--btn-text);
+  }
+  .btn:hover:not(:disabled) { background: var(--btn-hover); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn.ghost {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border-strong);
+  }
+  .btn.ghost:hover:not(:disabled) { background: var(--chip); color: var(--text); }
+  .btn.block { width: 100%; }
+  .stack { display: flex; flex-direction: column; gap: 20px; }
+
+  /* Dropzone */
+  .drop {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; text-align: center; padding: 48px 24px; cursor: pointer;
+    border: 2px dashed var(--border-strong); border-radius: 12px;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+  .drop:hover { border-color: var(--muted); }
+  .drop.over { border-color: var(--warn-line); background: var(--warn-bg); }
+  .drop .big { font-size: 14px; font-weight: 500; color: var(--text-strong); }
+  .drop .small { font-size: 12px; color: var(--muted); }
+
+  .filelist { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .filerow {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--chip); border-radius: 8px; padding: 8px 12px; font-size: 14px;
+  }
+  .filerow .fn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .filerow button { background: none; border: 0; font: inherit; font-size: 12px; color: var(--faint); cursor: pointer; margin-left: 12px; }
+  .filerow button:hover { color: #ef4444; }
+
+  /* Steps */
+  .steps { display: flex; flex-direction: column; }
+  .step { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .step:first-child { border-top: 0; }
+  .dot2 { margin-top: 6px; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--border-strong); }
+  .dot2.running { background: #f59e0b; animation: pulse 1s ease-in-out infinite; }
+  .dot2.done { background: #10b981; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { .dot2.running { animation: none; } }
+  .step .sname { font-size: 14px; font-weight: 500; color: var(--text-strong); }
+  .step .sdesc { font-size: 12px; color: var(--muted); }
+  .step .sstat { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--faint); text-transform: capitalize; }
+
+  /* Result chips + table */
+  .chips { display: flex; flex-wrap: wrap; gap: 12px; font-size: 14px; }
+  .chip { border-radius: 10px; padding: 6px 12px; font-weight: 500; }
+  .chip.ok { background: var(--ok-bg); color: var(--ok-text); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .chip.neutral { background: var(--chip); color: var(--muted); }
+  .chip.err { background: var(--err-bg); color: var(--err-text); }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }
+  thead { background: var(--chip); color: var(--muted); }
+  th { padding: 8px 12px; font-weight: 500; white-space: nowrap; }
+  td { padding: 8px 12px; border-top: 1px solid var(--border); color: var(--text); vertical-align: top; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .trunc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { display: inline-block; border-radius: 6px; padding: 2px 8px; font-weight: 500; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok-text); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .badge.err { background: var(--err-bg); color: var(--err-text); }
+
+  .note { margin-top: 16px; font-size: 12px; color: var(--faint); }
+  .hidden { display: none !important; }
+
+  @media (max-width: 767px) {
+    .sidebar { display: none; }
+    .topbar { display: flex; }
+    .content { padding: 24px 16px; }
+  }
+</style>
+
+<div class="shell">
+  <div class="dots"></div>
+
+  <aside class="sidebar">
+    <button class="brand" data-nav="home"><span style="font-size:18px">🛠️</span> <b>Abyrx Tools</b></button>
+    <nav id="nav"></nav>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="brand" data-nav="home" style="margin:0"><span style="font-size:18px">🛠️</span> <b>Abyrx Tools</b></button>
+      <button class="backlink" data-nav="home" id="mobileBack" style="margin:0">← Tools</button>
+    </header>
+    <main class="content"><div id="view"></div></main>
+  </div>
+</div>
+
+<script>/*__ABYRX_VENDOR_BUNDLE__*/</script>
+<script>
+(function () {
+  "use strict";
+  var K = window.AbyrxKaiser;
+
+  var TOOLS = [
+    { id: "kaiser-billing", name: "Kaiser Billing", icon: "🧾",
+      tagline: "Bill sheet PDFs → ready-to-upload Bill-Only spreadsheet", active: true },
+    { id: "coming-soon", name: "Next tool", icon: "➕",
+      tagline: "Another workflow can live here", active: false }
+  ];
+  var STEPS = [
+    { name: "read bill sheets", desc: "Read each PDF into structured fields" },
+    { name: "resolve & map", desc: "Match Surgery Location, combine products, split missing Case IDs" },
+    { name: "add to master sheet", desc: "Append the rows to your running master sheet" }
+  ];
+  var LS_KEY = "abyrx.kaiser.master.v1";
+
+  // ---- state ----
+  var master = load();
+  var staged = [];          // File[]
+  var dragOver = false;
+  var phase = "idle";       // idle | running | done
+  var lastBatch = null;     // { added, addedMissing, files, errors }
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { uploadRows: [], missingRows: [], files: [] };
+  }
+  function save() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(master)); } catch (e) {}
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+  function route() {
+    var id = (location.hash || "").replace(/^#\/?/, "");
+    var t = TOOLS.filter(function (x) { return x.id === id && x.active; })[0];
+    return t ? t.id : "home";
+  }
+
+  // ---- rendering ----
+  function renderNav() {
+    var cur = route();
+    var html = '<button class="navitem ' + (cur === "home" ? "active" : "") +
+      '" data-nav="home"><span class="ico">🏠</span><span class="grow">Home</span></button>';
+    TOOLS.forEach(function (t) {
+      if (t.active) {
+        html += '<button class="navitem ' + (cur === t.id ? "active" : "") +
+          '" data-nav="' + t.id + '"><span class="ico">' + t.icon +
+          '</span><span class="grow">' + esc(t.name) + '</span></button>';
+      } else {
+        html += '<span class="navitem soon"><span class="ico">' + t.icon +
+          '</span><span class="grow">' + esc(t.name) + '</span><span class="tag">soon</span></span>';
+      }
+    });
+    document.getElementById("nav").innerHTML = html;
+  }
+
+  function renderHome() {
+    var cards = TOOLS.map(function (t) {
+      if (t.active) {
+        return '<button class="toolcard" data-nav="' + t.id + '">' +
+          '<span class="emoji">' + t.icon + '</span>' +
+          '<span class="tname">' + esc(t.name) + '</span>' +
+          '<span class="ttag">' + esc(t.tagline) + '</span></button>';
+      }
+      return '<div class="toolcard soon"><span class="emoji">' + t.icon + '</span>' +
+        '<span class="tname">' + esc(t.name) + '</span>' +
+        '<span class="ttag">' + esc(t.tagline) + '</span>' +
+        '<span class="pill-soon">Coming soon</span></div>';
+    }).join("");
+    return '<div class="wrap wrap-wide">' +
+      '<h1 class="page">Your tools</h1>' +
+      '<p class="sub" style="margin-bottom:24px">Pick a tool to get started. Everything runs right here in your browser — no upload, no login.</p>' +
+      '<div class="grid">' + cards + '</div></div>';
+  }
+
+  function masterPanel() {
+    var rows = master.uploadRows.length;
+    var missing = master.missingRows.length;
+    var sheets = master.files.length;
+    var empty = rows === 0 && missing === 0;
+    var meta = empty
+      ? "Empty — process a bill sheet to start filling it."
+      : rows + " row" + (rows === 1 ? "" : "s") + " from " + sheets + " bill sheet" +
+        (sheets === 1 ? "" : "s") + (missing ? " · " + missing + " missing Case ID" : "");
+    return '<div class="card master" style="margin-bottom:24px">' +
+      '<div><div class="label">Master sheet</div><div class="meta">' + esc(meta) + '</div></div>' +
+      '<div class="actions">' +
+      '<button class="btn" id="dl" ' + (empty ? "disabled" : "") + '>Download master sheet</button>' +
+      '<button class="btn ghost" id="clr" ' + (empty ? "disabled" : "") + '>Clear</button>' +
+      '</div></div>';
+  }
+
+  function stepsView() {
+    var idx = phase === "done" ? STEPS.length : 1;
+    var rows = STEPS.map(function (s, i) {
+      var cls = phase === "done" || i < idx ? "done" : (i === idx - 1 && phase === "running" ? "running" : "");
+      var stat = cls === "done" ? "completed" : cls === "running" ? "running" : "pending";
+      return '<div class="step"><span class="dot2 ' + cls + '"></span>' +
+        '<div><div class="sname">' + esc(s.name) + '</div><div class="sdesc">' + esc(s.desc) + '</div></div>' +
+        '<span class="sstat">' + stat + '</span></div>';
+    }).join("");
+    return '<div class="steps">' + rows + '</div>';
+  }
+
+  function resultView() {
+    if (!lastBatch) return "";
+    var b = lastBatch;
+    var chips = '<span class="chip ok">+' + b.added + ' row' + (b.added === 1 ? "" : "s") + ' added</span>';
+    if (b.addedMissing > 0) chips += '<span class="chip warn">' + b.addedMissing + ' missing Case ID</span>';
+    if (b.errors.length) chips += '<span class="chip err">' + b.errors.length + ' unreadable</span>';
+    chips += '<span class="chip neutral">master now: ' + master.uploadRows.length + ' rows</span>';
+
+    var body = b.files.map(function (f) {
+      var loc = f.locationId ? esc(f.locationId + (f.locationName ? " · " + f.locationName : "")) : "—";
+      var badge = f.routed === "upload"
+        ? '<span class="badge ok">Added</span>'
+        : '<span class="badge warn">Missing Case ID</span>';
+      return '<tr><td class="trunc">' + esc(f.sourceFile) + '</td><td>' + esc(f.caseId || "—") +
+        '</td><td>' + loc + '</td><td class="num">' + f.lineItems + '</td><td>' + badge + '</td></tr>';
+    }).join("");
+    b.errors.forEach(function (e) {
+      body += '<tr><td class="trunc">' + esc(e.name) + '</td><td>—</td><td>—</td><td class="num">0</td>' +
+        '<td><span class="badge err">Unreadable</span></td></tr>';
+    });
+
+    return '<div class="stack" style="margin-top:20px">' +
+      '<div class="chips">' + chips + '</div>' +
+      '<div class="tablewrap"><table><thead><tr>' +
+      '<th>Bill sheet</th><th>Case ID</th><th>Surgery location</th><th>Lines</th><th>Result</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+      '<button class="btn ghost block" id="more">Process more bill sheets</button></div>';
+  }
+
+  function uploadView() {
+    var files = staged.map(function (f) {
+      return '<li class="filerow"><span class="fn">' + esc(f.name) + '</span>' +
+        '<button data-rm="' + esc(f.name) + '">Remove</button></li>';
+    }).join("");
+    var list = staged.length ? '<ul class="filelist">' + files + "</ul>" : "";
+    var btnLabel = "Add to master sheet" + (staged.length ? " (" + staged.length + ")" : "");
+    return '<div class="card">' +
+      '<div class="drop ' + (dragOver ? "over" : "") + '" id="drop">' +
+      '<div class="big">Drop bill sheet PDFs here, or click to choose</div>' +
+      '<div class="small">One or many at a time · PDF only</div>' +
+      '<input id="file" type="file" accept="application/pdf" multiple class="hidden">' +
+      '</div>' + list +
+      '<button class="btn block" id="go" style="margin-top:20px" ' +
+      (staged.length ? "" : "disabled") + '>' + esc(btnLabel) + '</button>' +
+      '</div>';
+  }
+
+  function renderKaiser() {
+    var inner;
+    if (phase === "running" || phase === "done") {
+      inner = '<div class="card">' + stepsView() + (phase === "done" ? resultView() : "") + '</div>';
+    } else {
+      inner = uploadView();
+    }
+    return '<div class="wrap">' +
+      '<div style="margin-bottom:20px"><h1 class="page">Kaiser Billing</h1>' +
+      '<p class="sub">Process bill sheets as they come in — rows pile into one master sheet you download and upload to Kaiser.</p></div>' +
+      masterPanel() + inner +
+      '<p class="note">Each bill sheet’s rows are added to the master sheet above. Download it whenever you’re ready to upload to Kaiser, then Clear to start the next batch. Missing Case IDs collect on a separate tab. The Generate-File macro and drop-downs are preserved. Nothing leaves your device.</p>' +
+      '</div>';
+  }
+
+  function render() {
+    var r = route();
+    renderNav();
+    document.getElementById("mobileBack").style.display = r === "home" ? "none" : "";
+    document.getElementById("view").innerHTML = r === "kaiser-billing" ? renderKaiser() : renderHome();
+    wire(r);
+  }
+
+  // ---- actions ----
+  function addFiles(list) {
+    if (!list) return;
+    var seen = {};
+    staged.forEach(function (f) { seen[f.name + f.size] = 1; });
+    Array.prototype.forEach.call(list, function (f) {
+      var isPdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+      if (isPdf && !seen[f.name + f.size]) { staged.push(f); seen[f.name + f.size] = 1; }
+    });
+    render();
+  }
+
+  async function process() {
+    if (!staged.length) return;
+    phase = "running";
+    render();
+    var sheets = [], errors = [];
+    for (var i = 0; i < staged.length; i++) {
+      var f = staged[i];
+      try {
+        var buf = new Uint8Array(await f.arrayBuffer());
+        sheets.push(await K.parse(f.name, buf));
+      } catch (e) {
+        errors.push({ name: f.name, msg: String(e && e.message || e) });
+      }
+    }
+    var batch = K.toRows(sheets);
+    master.uploadRows = master.uploadRows.concat(batch.uploadRows);
+    master.missingRows = master.missingRows.concat(batch.missingRows);
+    master.files = master.files.concat(batch.files);
+    save();
+    lastBatch = {
+      added: batch.uploadRows.length,
+      addedMissing: batch.missingRows.length,
+      files: batch.files,
+      errors: errors
+    };
+    staged = [];
+    phase = "done";
+    render();
+  }
+
+  function download() {
+    try {
+      var bytes = K.xlsm(master.uploadRows, master.missingRows);
+      var blob = new Blob([bytes], { type: "application/vnd.ms-excel.sheet.macroEnabled.12" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = "Abyrx_Bill_Only_Upload.xlsm";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    } catch (e) {
+      alert("Could not build the spreadsheet: " + (e && e.message || e));
+    }
+  }
+
+  function clearMaster() {
+    if (!confirm("Clear the master sheet? Do this after you’ve uploaded it to Kaiser.")) return;
+    master = { uploadRows: [], missingRows: [], files: [] };
+    lastBatch = null;
+    save();
+    render();
+  }
+
+  // ---- wiring ----
+  function wire(r) {
+    if (r === "kaiser-billing") {
+      var drop = document.getElementById("drop");
+      var file = document.getElementById("file");
+      if (drop) {
+        drop.onclick = function () { file.click(); };
+        drop.ondragover = function (e) { e.preventDefault(); if (!dragOver) { dragOver = true; render(); } };
+        drop.ondragleave = function () { if (dragOver) { dragOver = false; render(); } };
+        drop.ondrop = function (e) {
+          e.preventDefault(); dragOver = false;
+          addFiles(e.dataTransfer.files);
+        };
+      }
+      if (file) file.onchange = function (e) { addFiles(e.target.files); };
+      var go = document.getElementById("go");
+      if (go) go.onclick = process;
+      var dl = document.getElementById("dl");
+      if (dl) dl.onclick = download;
+      var clr = document.getElementById("clr");
+      if (clr) clr.onclick = clearMaster;
+      var more = document.getElementById("more");
+      if (more) more.onclick = function () { phase = "idle"; lastBatch = null; render(); };
+      Array.prototype.forEach.call(document.querySelectorAll("[data-rm]"), function (btn) {
+        btn.onclick = function () {
+          var n = btn.getAttribute("data-rm");
+          staged = staged.filter(function (f) { return f.name !== n; });
+          render();
+        };
+      });
+    }
+  }
+
+  // Global nav (sidebar, cards, brand)
+  document.addEventListener("click", function (e) {
+    var el = e.target.closest ? e.target.closest("[data-nav]") : null;
+    if (!el) return;
+    var id = el.getAttribute("data-nav");
+    location.hash = id === "home" ? "#/" : "#/" + id;
+  });
+  window.addEventListener("hashchange", function () { phase = "idle"; lastBatch = null; render(); });
+
+  render();
+})();
+</script>

@@ -35,3 +35,7 @@ worker-configuration.d.ts
 # Local-only source spreadsheets for regenerating reference data
 scripts/*.xlsm
 scripts/*.xlsx
+
+# Generated standalone-page build outputs (rebuild with scripts/standalone/build.mjs)
+scripts/standalone/bundle.js
+scripts/standalone/abyrx-tools.html
