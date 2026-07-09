@@ -46,6 +46,7 @@ const FIELD_LABELS = [
 	"Procedure",
 	"Where Used",
 	"Case Details",
+	"Case Information",
 	"Hospital Information",
 	"Vendor Name",
 	"Contact",
@@ -104,7 +105,11 @@ export function parseBillSheetText(text: string, fileName: string): BillSheet {
 	const surgeryDate = (text.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/) || [])[1] ?? null;
 	const surgeon = fieldValue(text, pos, "Surgeon's Name");
 	const procedure = fieldValue(text, pos, "Procedure");
-	const caseId = extractCaseId(fieldValue(text, pos, "Case Details"));
+	// Sheets label the case-ID field either "Case Details" or "Case Information";
+	// read whichever one carries a value.
+	const caseId = extractCaseId(
+		fieldValue(text, pos, "Case Details") || fieldValue(text, pos, "Case Information"),
+	);
 	const shipping = fieldValue(text, pos, "Shipping Address");
 	const rep = fieldValue(text, pos, "Rep Name");
 	// Hospital name sits between "Hospital Information" and "Vendor Name", after

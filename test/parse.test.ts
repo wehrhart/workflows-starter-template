@@ -35,6 +35,15 @@ describe("parseBillSheetText", () => {
 		expect(s.caseId).toBe("80486123");
 	});
 
+	it("reads a Case ID from a 'Case Information' label", () => {
+		const text = TEXT_WITH_CASE.replace(
+			"C a se D eta ils 80486123 Hospital Information",
+			"C a se In fo rm a tio n 80486123 Hospital Information",
+		);
+		const s = parseBillSheetText(text, "80486.pdf");
+		expect(s.caseId).toBe("80486123");
+	});
+
 	it("takes the zip after the state, not the street number", () => {
 		const s = parseBillSheetText(TEXT_MISSING_CASE, "x.pdf");
 		expect(s.shippingZip).not.toBe("10180");
