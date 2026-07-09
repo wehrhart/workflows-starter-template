@@ -6,7 +6,10 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 
 // https://vite.dev/config/
 export default defineConfig({
-	plugins: [react(), tailwindcss(), cloudflare()],
+	// `inspectorPort: false` turns off the workerd debugger, which otherwise
+	// tries to reach workers.cloudflare.com on boot and crashes the dev server
+	// in locked-down/offline environments. The app runs fully local without it.
+	plugins: [react(), tailwindcss(), cloudflare({ inspectorPort: false })],
 	// Abyrx Tools runs on its own port so it won't collide with other local apps.
 	// Override anytime: `npm run dev -- --port 1234`.
 	server: {
