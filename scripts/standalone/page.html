@@ -311,45 +311,6 @@
     }
   }
 
-  function bytesToBase64(bytes) {
-    var bin = "", chunk = 0x8000;
-    for (var i = 0; i < bytes.length; i += chunk) {
-      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-    }
-    return btoa(bin);
-  }
-
-  // A self-contained page written into a NEW tab. The artifact iframe blocks
-  // page-initiated downloads, but a fresh top-level tab (when popups may escape
-  // the sandbox) can save the file on load — with a one-tap button as backup.
-  function popupDoc(b64) {
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<title>Download — Abyrx Tools</title><style>' +
-      'body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
-      'gap:14px;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;' +
-      'background:#fafafa;color:#262626;text-align:center;padding:24px}' +
-      '@media(prefers-color-scheme:dark){body{background:#0a0a0a;color:#e5e5e5}}' +
-      '.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:16px}' +
-      'h1{font-size:18px;margin:0}p{font-size:14px;color:#737373;margin:0;max-width:340px}' +
-      'a.btn{display:inline-block;text-decoration:none;background:#171717;color:#fff;border-radius:12px;' +
-      'padding:12px 22px;font-size:15px;font-weight:600}' +
-      '@media(prefers-color-scheme:dark){a.btn{background:#fff;color:#171717}}' +
-      '</style></head><body>' +
-      '<div class="brand"><span style="font-size:20px">🛠️</span> Abyrx Tools</div>' +
-      '<h1>Master sheet ready</h1>' +
-      '<p id="msg">Starting your download…</p>' +
-      '<a id="save" class="btn" download="Abyrx_Bill_Only_Upload.xlsm">Save spreadsheet</a>' +
-      '<p style="font-size:12px">You can close this tab once it saves.</p>' +
-      '<scr' + 'ipt>(function(){var b="' + b64 + '";var bin=atob(b),arr=new Uint8Array(bin.length);' +
-      'for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);' +
-      'var u=URL.createObjectURL(new Blob([arr],{type:"application/vnd.ms-excel.sheet.macroEnabled.12"}));' +
-      'var el=document.getElementById("save");el.href=u;' +
-      'try{el.click();document.getElementById("msg").textContent="If your download did not start, tap Save spreadsheet below.";}' +
-      'catch(e){document.getElementById("msg").textContent="Tap Save spreadsheet below.";}' +
-      '})();</scr' + 'ipt></body></html>';
-  }
-
   function load() {
     try {
       var raw = localStorage.getItem(LS_KEY);
@@ -595,23 +556,6 @@
       if (file) file.onchange = function (e) { addFiles(e.target.files); };
       var go = document.getElementById("go");
       if (go) go.onclick = process;
-      var dl = document.getElementById("dl");
-      if (dl) dl.addEventListener("click", function (e) {
-        var bytes;
-        try { bytes = K.xlsm(master.uploadRows, master.missingRows); }
-        catch (err) { return; } // leave the anchor's default (two-finger save)
-        var w = null;
-        try { w = window.open("", "_blank"); } catch (err) { w = null; }
-        if (w && w.document) {
-          e.preventDefault();
-          try {
-            w.document.open();
-            w.document.write(popupDoc(bytesToBase64(bytes)));
-            w.document.close();
-          } catch (err) { /* nothing more we can do */ }
-        }
-        // popup blocked → fall through to the <a download> default
-      });
       var clr = document.getElementById("clr");
       if (clr) clr.onclick = clearMaster;
       var more = document.getElementById("more");
