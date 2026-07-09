@@ -85,18 +85,23 @@ function num(s: string): number {
 }
 
 /**
- * Pull the usable Case ID out of the "Case Details" text. Sheets write it a few
- * ways — e.g. "E-settlements case #3859691" — so prefer the token after a "#",
- * then a trailing ID, else the whole thing.
+ * Pull the usable Case ID out of the case field. The Case ID is numeric, so we
+ * just grab the number on that line no matter what precedes it — e.g.
+ * "E-settlements case #3859691" or "case ## 3859691" both yield "3859691".
+ * No digits on the line means no Case ID (routes to the Missing Case ID tab).
  */
 export function extractCaseId(raw: string): string | null {
 	const t = raw.trim();
 	if (!t) return null;
-	const hash = t.match(/#\s*([A-Za-z0-9-]{3,})/);
-	if (hash) return hash[1];
-	const trailing = t.match(/([A-Za-z]?\d{4,})\s*$/);
-	if (trailing) return trailing[1];
-	return t;
+	// Prefer a number that follows "#" or the word "case"; otherwise the last
+	// run of digits on the line.
+	const afterHash = t.match(/#+\s*(\d{3,})/);
+	if (afterHash) return afterHash[1];
+	const afterCase = t.match(/case[^0-9]*(\d{3,})/i);
+	if (afterCase) return afterCase[1];
+	const digits = t.match(/\d{3,}/g);
+	if (digits) return digits[digits.length - 1];
+	return null;
 }
 
 /** Parse the fields of an Abyrx/Kaiser bill sheet out of its extracted text. */

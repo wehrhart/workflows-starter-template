@@ -78,8 +78,17 @@ describe("extractCaseId", () => {
 	it("takes the token after a #", () => {
 		expect(extractCaseId("E-settlements case #3859691")).toBe("3859691");
 	});
+	it("handles doubled hashes", () => {
+		expect(extractCaseId("E-settlements case ##3859691")).toBe("3859691");
+	});
 	it("takes a trailing ID", () => {
 		expect(extractCaseId("Case 80486123")).toBe("80486123");
+	});
+	it("pulls the number out even with no # or 'case'", () => {
+		expect(extractCaseId("E-settlements 3859691")).toBe("3859691");
+	});
+	it("is null when the line has no number", () => {
+		expect(extractCaseId("E-settlements pending")).toBeNull();
 	});
 	it("is null for empty", () => {
 		expect(extractCaseId("   ")).toBeNull();
