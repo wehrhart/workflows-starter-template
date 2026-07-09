@@ -18,8 +18,9 @@ await page.locator('.toolcard[data-nav="price-information"]').click();
 await page.locator("#pcode").waitFor();
 await page.screenshot({ path: `${SC}/tour-2-empty.png` });
 
-// 3) Result with sister-facility approvals (Abrazo Arrowhead #1054).
-await page.locator("#pcode").fill("1054");
+// 3) Result with sister-facility approvals.
+const CODE = process.argv[2] || "1054";
+await page.locator("#pcode").fill(CODE);
 await page.locator("#plook").click();
 await page.locator("table tbody tr").first().waitFor({ timeout: 8000 });
 await page.locator("details summary").click(); // expand the sister list
