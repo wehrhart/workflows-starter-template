@@ -12,6 +12,8 @@ import { processBillSheets } from "../../worker/lib/transform";
 import { buildFilledWorkbook } from "../../worker/lib/xlsx-inject";
 import { TEMPLATE_XLSM_BASE64 } from "../../worker/assets/template";
 import type { BillSheet, UploadRow, MissingRow } from "../../worker/lib/types";
+import { lookupPrice, formatReport, normalizeCode } from "../../worker/lib/price-lookup";
+import { PRICE_DATA } from "../../worker/lib/price-data";
 
 function base64ToBytes(b64: string): Uint8Array {
 	const bin = atob(b64);
@@ -42,3 +44,13 @@ function xlsm(uploadRows: UploadRow[], missingRows: MissingRow[]): Uint8Array {
 export const AbyrxKaiser = { parse, toRows, xlsm };
 // Also hang it on the global so the inline page script can reach it.
 (globalThis as unknown as { AbyrxKaiser: typeof AbyrxKaiser }).AbyrxKaiser = AbyrxKaiser;
+
+/** Price Information tool — pure offline lookup over the baked KAIRUKU snapshot. */
+export const AbyrxPrice = {
+	lookup: (code: string) => lookupPrice(code),
+	report: formatReport,
+	normalizeCode,
+	generatedAt: PRICE_DATA.generatedAt,
+	facilityCount: PRICE_DATA.facilityCount,
+};
+(globalThis as unknown as { AbyrxPrice: typeof AbyrxPrice }).AbyrxPrice = AbyrxPrice;

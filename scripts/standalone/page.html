@@ -272,10 +272,13 @@
 (function () {
   "use strict";
   var K = window.AbyrxKaiser;
+  var P = window.AbyrxPrice;
 
   var TOOLS = [
     { id: "kaiser-billing", name: "Kaiser Billing", icon: "🧾",
       tagline: "Bill sheet PDFs → ready-to-upload Bill-Only spreadsheet", active: true },
+    { id: "price-information", name: "Price Information", icon: "💲",
+      tagline: "Facility code → approved products & prices, across the health system", active: true },
     { id: "coming-soon", name: "Next tool", icon: "➕",
       tagline: "Another workflow can live here", active: false }
   ];
@@ -285,6 +288,11 @@
     { name: "add to master sheet", desc: "Append the rows to your running master sheet" }
   ];
   var LS_KEY = "abyrx.kaiser.master.v1";
+
+  // ---- Price Information state ----
+  var priceInput = "";      // what's typed in the box
+  var priceResult = null;   // last lookup result
+  var priceCopied = false;
 
   // ---- state ----
   var master = load();
@@ -459,6 +467,84 @@
       '</div>';
   }
 
+  function priceRows(res) {
+    var rows = "";
+    res.approved.forEach(function (p) {
+      rows += '<tr><td>' + esc(p.product) + '</td><td class="num">' + esc(p.price) +
+        '</td><td><span class="badge ok">This facility</span></td></tr>';
+    });
+    res.systemExtras.forEach(function (p) {
+      rows += '<tr><td>' + esc(p.product) + '</td><td class="num">' + esc(p.price) +
+        '</td><td><span class="badge warn" title="' + esc(p.sourceName) + '">#' +
+        esc(p.sourceCode) + ' · sister</span></td></tr>';
+    });
+    return rows;
+  }
+
+  function priceResultView() {
+    var res = priceResult;
+    if (!res) return "";
+    if (!res.found) {
+      var msg = res.code
+        ? "No facility with code #" + esc(res.code) + " in the snapshot."
+        : "Enter a facility code to look up.";
+      return '<div class="chip warn" style="margin-top:16px;display:inline-block">' + msg + '</div>';
+    }
+    var f = res.facility;
+    var sub = esc(f.city) + ", " + esc(f.state) +
+      (res.systemName ? " · " + esc(res.systemName) : " · no health system matched");
+    var chips = '<span class="chip ok">' + res.approved.length + ' approved here</span>';
+    if (res.systemExtras.length) chips += '<span class="chip warn">+' + res.systemExtras.length + ' from sister facilities</span>';
+    if (res.sisters.length) chips += '<span class="chip neutral">' + res.sisters.length + ' sister facilities</span>';
+
+    var total = res.approved.length + res.systemExtras.length;
+    var table = total === 0
+      ? '<div class="meta" style="margin-top:16px">No products are approved at this facility or its sister facilities in the snapshot.</div>'
+      : '<div class="tablewrap" style="margin-top:16px"><table><thead><tr>' +
+        '<th>Product</th><th>Price</th><th>Source</th></tr></thead><tbody>' + priceRows(res) +
+        '</tbody></table></div>';
+
+    var sisters = "";
+    if (res.sisters.length) {
+      var items = res.sisters.map(function (s) {
+        return '<li>#' + esc(s.code) + ' · ' + esc(s.name) + ' — ' + esc(s.city) + ', ' + esc(s.state) +
+          (s.approvedCount > 0 ? ' · ' + s.approvedCount + ' approved' : '') + '</li>';
+      }).join("");
+      sisters = '<details style="margin-top:16px"><summary style="cursor:pointer;color:var(--muted);font-size:14px">' +
+        'Sister facilities checked (' + res.sisters.length + ') — verify these are the right system</summary>' +
+        '<ul style="margin:8px 0 0;padding-left:18px;font-size:12px;color:var(--muted)">' + items + '</ul></details>';
+    }
+
+    return '<div style="margin-top:20px">' +
+      '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:baseline">' +
+      '<div><div class="label" style="font-size:16px">' + esc(f.name) +
+      ' <span style="color:var(--faint);font-weight:400;font-size:14px">#' + esc(res.code) + '</span></div>' +
+      '<div class="meta">' + sub + '</div></div>' +
+      '<button class="btn ghost" id="pcopy" style="padding:6px 12px;font-size:12px">' +
+      (priceCopied ? "Copied ✓" : "Copy report") + '</button></div>' +
+      '<div class="chips" style="margin-top:12px">' + chips + '</div>' +
+      table + sisters + '</div>';
+  }
+
+  function renderPrice() {
+    return '<div class="wrap">' +
+      '<div style="margin-bottom:20px"><h1 class="page">Price Information</h1>' +
+      '<p class="sub">Enter a facility code — get every approved product and price for that facility, ' +
+      'plus approvals from its sister facilities in the same health system.</p></div>' +
+      '<div class="card">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px">' +
+      '<input id="pcode" value="' + esc(priceInput) + '" inputmode="numeric" ' +
+      'placeholder="Facility code, e.g. 6443 or FA6443" ' +
+      'style="flex:1;min-width:0;border:1px solid var(--border-strong);border-radius:12px;' +
+      'padding:10px 16px;font:inherit;font-size:14px;background:var(--surface-solid);color:var(--text)">' +
+      '<button class="btn" id="plook">Look up</button></div>' +
+      priceResultView() + '</div>' +
+      '<p class="note">Snapshot of KAIRUKU as of ' + esc(P.generatedAt) + ' · ' + P.facilityCount +
+      ' facilities. Health systems are inferred from facility names (KAIRUKU has no system field), so ' +
+      'sister facilities are a best-effort match — check the list before relying on cross-facility approvals. ' +
+      'Everything runs right here in your browser.</p></div>';
+  }
+
   function renderKaiser() {
     var inner;
     if (phase === "running" || phase === "done") {
@@ -478,7 +564,8 @@
     var r = route();
     renderNav();
     document.getElementById("mobileBack").style.display = r === "home" ? "none" : "";
-    document.getElementById("view").innerHTML = r === "kaiser-billing" ? renderKaiser() : renderHome();
+    document.getElementById("view").innerHTML =
+      r === "kaiser-billing" ? renderKaiser() : r === "price-information" ? renderPrice() : renderHome();
     wire(r);
   }
 
@@ -539,8 +626,36 @@
     render();
   }
 
+  function runPriceLookup() {
+    priceCopied = false;
+    priceResult = P.lookup(priceInput);
+    render();
+  }
+
   // ---- wiring ----
   function wire(r) {
+    if (r === "price-information") {
+      var pcode = document.getElementById("pcode");
+      if (pcode) {
+        pcode.oninput = function (e) { priceInput = e.target.value; };
+        pcode.onkeydown = function (e) { if (e.key === "Enter") runPriceLookup(); };
+        // keep focus + caret at end after a re-render
+        pcode.focus();
+        var v = pcode.value; pcode.value = ""; pcode.value = v;
+      }
+      var plook = document.getElementById("plook");
+      if (plook) plook.onclick = runPriceLookup;
+      var pcopy = document.getElementById("pcopy");
+      if (pcopy) pcopy.onclick = function () {
+        if (!priceResult) return;
+        var text = P.report(priceResult);
+        var done = function () { priceCopied = true; render(); setTimeout(function () { priceCopied = false; render(); }, 1500); };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function () {});
+        }
+      };
+      return;
+    }
     if (r === "kaiser-billing") {
       var drop = document.getElementById("drop");
       var file = document.getElementById("file");

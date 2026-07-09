@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { KaiserBilling } from "./KaiserBilling";
+import { PriceInformation } from "./PriceInformation";
 
 export interface ToolDef {
 	id: string;
@@ -25,6 +26,14 @@ export const TOOLS: ToolDef[] = [
 		icon: "🧾",
 		status: "active",
 		component: KaiserBilling,
+	},
+	{
+		id: "price-information",
+		name: "Price Information",
+		tagline: "Facility code → approved products & prices, across the health system",
+		icon: "💲",
+		status: "active",
+		component: PriceInformation,
 	},
 	{
 		id: "coming-soon",
