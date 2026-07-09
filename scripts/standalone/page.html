@@ -243,6 +243,27 @@
   .note { margin-top: 16px; font-size: 12px; color: var(--faint); }
   .hidden { display: none !important; }
 
+  /* Price Quote form */
+  .qin {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--border-strong);
+    border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 14px;
+    background: var(--surface-solid); color: var(--text); outline: none;
+  }
+  .qin:focus { border-color: var(--muted); }
+  .qrow {
+    display: flex; align-items: center; gap: 12px; padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+  .qrow-l { flex: 1; min-width: 0; }
+  .qcode { font-size: 14px; font-weight: 500; color: var(--text-strong);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qlabel { font-size: 12px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qprice { position: relative; width: 132px; flex-shrink: 0; }
+  .qdollar { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    color: var(--faint); font-size: 14px; pointer-events: none; }
+  .qmoney { padding-left: 22px; text-align: right; font-variant-numeric: tabular-nums; }
+
   @media (max-width: 767px) {
     .sidebar { display: none; }
     .topbar { display: flex; }
@@ -276,6 +297,8 @@
   var TOOLS = [
     { id: "kaiser-billing", name: "Kaiser Billing", icon: "🧾",
       tagline: "Bill sheet PDFs → ready-to-upload Bill-Only spreadsheet", active: true },
+    { id: "price-quote", name: "Price Quote Generator", icon: "📄",
+      tagline: "Hospital + prices → a PDF quote in the ABYRX template", active: true },
     { id: "coming-soon", name: "Next tool", icon: "➕",
       tagline: "Another workflow can live here", active: false }
   ];
@@ -294,6 +317,10 @@
   var lastBatch = null;     // { added, addedMissing, files, errors }
   var masterUrl = null;     // object URL of the built .xlsm, ready for a real tap
   var downloadError = null;
+
+  // ---- Price Quote tool state ----
+  var Q = window.AbyrxQuote;
+  var quotePdfUrl = null;   // object URL of the generated quote PDF
 
   // (Re)build the downloadable .xlsm whenever the master changes, so the
   // Download control is a real link the browser can save natively.
@@ -474,11 +501,107 @@
       '</div>';
   }
 
+  // ---- Price Quote tool ----
+  function renderQuote() {
+    var fields =
+      '<div class="grid" style="gap:12px">' +
+      '<label style="grid-column:1/-1"><div class="sdesc" style="margin-bottom:4px">Hospital name</div>' +
+      '<input class="qin" id="q_hospital" placeholder="Jackson Health System"></label>' +
+      '<label style="grid-column:1/-1"><div class="sdesc" style="margin-bottom:4px">Street address</div>' +
+      '<input class="qin" id="q_street" placeholder="1611 NW 12th Avenue"></label>' +
+      '<label><div class="sdesc" style="margin-bottom:4px">City</div>' +
+      '<input class="qin" id="q_city" placeholder="Miami"></label>' +
+      '<div class="grid" style="grid-template-columns:1fr 1fr;gap:12px">' +
+      '<label><div class="sdesc" style="margin-bottom:4px">State</div>' +
+      '<input class="qin" id="q_state" placeholder="FL"></label>' +
+      '<label><div class="sdesc" style="margin-bottom:4px">ZIP</div>' +
+      '<input class="qin" id="q_zip" placeholder="33136"></label></div>' +
+      '</div>';
+
+    var rows = Q.inputs.map(function (p) {
+      var ph = Q.formatMoney(p.defaultPrice).replace("$", "");
+      return '<div class="qrow">' +
+        '<div class="qrow-l"><div class="qcode">' + esc(p.code) + '</div>' +
+        '<div class="qlabel">' + esc(p.label) + '</div></div>' +
+        '<div class="qprice"><span class="qdollar">$</span>' +
+        '<input class="qin qmoney" inputmode="decimal" data-price="' + esc(p.id) +
+        '" placeholder="' + esc(ph) + '"></div></div>';
+    }).join("");
+
+    return '<div class="wrap">' +
+      '<div style="margin-bottom:20px"><h1 class="page">Price Quote Generator</h1>' +
+      '<p class="sub">Fill in the hospital and the prices you want to quote — generate a PDF that matches the ABYRX quote template exactly.</p></div>' +
+      '<div class="card" style="margin-bottom:20px"><div class="label" style="margin-bottom:12px">Quote to</div>' + fields + '</div>' +
+      '<div class="card"><div class="label">Prices</div>' +
+      '<p class="sub" style="margin:4px 0 12px">Enter a price only for the products you want to quote — blanks are left out. Entering <b>OS-MON-1604</b> (single 4g unit) also adds the 16g 4-pack at 4× that price.</p>' +
+      rows +
+      '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px">' +
+      '<button class="btn" id="q_go">Generate PDF</button>' +
+      '<span class="sdesc" id="q_count">0 products priced</span>' +
+      '<span id="q_result" style="margin-left:auto"></span></div>' +
+      '<div class="meta" id="q_error" style="color:var(--err-text);margin-top:8px"></div>' +
+      '</div>' +
+      '<p class="note">The quote keeps the template’s exact layout — today’s date, an expiration one month out, your hospital and address, and only the products you priced. Everything runs in your browser; nothing is uploaded.</p>' +
+      '</div>';
+  }
+
+  function readQuoteForm() {
+    function v(id) { var el = document.getElementById(id); return el ? el.value : ""; }
+    var header = {
+      hospitalName: v("q_hospital"), streetAddress: v("q_street"),
+      city: v("q_city"), state: v("q_state"), zip: v("q_zip")
+    };
+    var prices = {};
+    Array.prototype.forEach.call(document.querySelectorAll("[data-price]"), function (el) {
+      prices[el.getAttribute("data-price")] = Q.parsePrice(el.value);
+    });
+    return { header: header, prices: prices };
+  }
+
+  function updateQuoteCount() {
+    var n = 0;
+    Array.prototype.forEach.call(document.querySelectorAll("[data-price]"), function (el) {
+      if (Q.parsePrice(el.value) != null) n++;
+    });
+    var c = document.getElementById("q_count");
+    if (c) c.textContent = n + (n === 1 ? " product priced" : " products priced");
+  }
+
+  function generateQuote() {
+    var err = document.getElementById("q_error");
+    var result = document.getElementById("q_result");
+    err.textContent = "";
+    var form = readQuoteForm();
+    if (!form.header.hospitalName.trim()) {
+      err.textContent = "Enter the hospital name — it's used in the quote and the file name.";
+      return;
+    }
+    var quote = Q.build(form.header, form.prices);
+    if (!quote.lines.length) {
+      err.textContent = "Enter a price for at least one product.";
+      return;
+    }
+    try {
+      if (quotePdfUrl) { URL.revokeObjectURL(quotePdfUrl); quotePdfUrl = null; }
+      var blob = Q.pdfBlob(quote);
+      quotePdfUrl = URL.createObjectURL(blob);
+      // A real <a download> the browser saves on a genuine tap (Safari + iframes).
+      result.innerHTML = '<a class="btn" style="background:var(--ok-bg);color:var(--ok-text)" href="' +
+        quotePdfUrl + '" download="' + esc(quote.fileName) + '" target="_blank" rel="noopener">Download “' +
+        esc(quote.fileName) + '” (' + quote.lines.length + ' line' + (quote.lines.length === 1 ? "" : "s") + ')</a>';
+    } catch (e) {
+      err.textContent = "Could not generate the PDF: " + String((e && e.message) || e);
+    }
+  }
+
   function render() {
     var r = route();
     renderNav();
     document.getElementById("mobileBack").style.display = r === "home" ? "none" : "";
-    document.getElementById("view").innerHTML = r === "kaiser-billing" ? renderKaiser() : renderHome();
+    var view = document.getElementById("view");
+    if (r === "kaiser-billing") view.innerHTML = renderKaiser();
+    else if (r === "price-quote") view.innerHTML = renderQuote();
+    else view.innerHTML = renderHome();
     wire(r);
   }
 
@@ -565,6 +688,18 @@
           var n = btn.getAttribute("data-rm");
           staged = staged.filter(function (f) { return f.name !== n; });
           render();
+        };
+      });
+    }
+    if (r === "price-quote") {
+      var go = document.getElementById("q_go");
+      if (go) go.onclick = generateQuote;
+      // Editing a price updates the count and invalidates a stale download.
+      Array.prototype.forEach.call(document.querySelectorAll("[data-price]"), function (el) {
+        el.oninput = function () {
+          updateQuoteCount();
+          var result = document.getElementById("q_result");
+          if (result) result.innerHTML = "";
         };
       });
     }
