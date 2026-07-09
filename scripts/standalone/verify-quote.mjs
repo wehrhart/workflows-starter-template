@@ -26,6 +26,8 @@ const browser = await chromium.launch({
 	executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
 });
 
+// Price EVERY product — 12 output lines forces the table onto two pages,
+// which is exactly the case that once crashed the description renderer.
 async function fill(scope) {
 	await scope.locator('.toolcard[data-nav="price-quote"]').click();
 	await scope.locator("#q_hospital").fill("Jackson Health System");
@@ -33,9 +35,9 @@ async function fill(scope) {
 	await scope.locator("#q_city").fill("Miami");
 	await scope.locator("#q_state").fill("FL");
 	await scope.locator("#q_zip").fill("33136");
-	await scope.locator('[data-price="OS-MON-1001"]').fill("1748");
-	await scope.locator('[data-price="OS-MON-1604"]').fill("833");
-	await scope.locator('[data-price="OS-401"]').fill("224");
+	const inputs = scope.locator("[data-price]");
+	const n = await inputs.count();
+	for (let i = 0; i < n; i++) await inputs.nth(i).fill(String(100 * (i + 1)));
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

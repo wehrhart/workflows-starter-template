@@ -11,7 +11,7 @@
  * worker/lib/quote.ts so it can be unit-tested in the Workers runtime.
  */
 import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
+import autoTable, { type RowInput } from "jspdf-autotable";
 import type { Quote } from "../../worker/lib/quote";
 import { QUOTE_LOGO_JPEG_BASE64, QUOTE_MARK_JPEG_BASE64 } from "../../worker/assets/quote-logo";
 
@@ -58,6 +58,15 @@ function sanitize(text: string): string {
 		.replace(/[‘’]/g, "'")
 		.replace(/[“”]/g, '"')
 		.replace(/[–—]/g, "-");
+}
+
+/** Read the descIndex smuggled on a description cell's raw input. */
+function descIndexOf(raw: unknown): number | null {
+	if (raw && typeof raw === "object" && "descIndex" in raw) {
+		const v = (raw as { descIndex?: unknown }).descIndex;
+		if (typeof v === "number") return v;
+	}
+	return null;
 }
 
 function drawHeaderFooter(doc: jsPDF) {
@@ -185,6 +194,10 @@ function renderQuoteDoc(quote: Quote): jsPDF {
 		startY: netY + 6,
 		margin: { top: 108, left: ITEM_TABLE_X, right: ITEM_TABLE_X, bottom: 92 },
 		tableWidth: ITEM_TABLE_W,
+		// Never split a row across pages (Word's cantSplit): a row that doesn't
+		// fit moves wholly to the next page. Also keeps the manually-drawn
+		// description cells one-piece.
+		rowPageBreak: "avoid",
 		theme: "grid",
 		tableLineColor: [0, 0, 0],
 		tableLineWidth: 0.5,
@@ -217,18 +230,22 @@ function renderQuoteDoc(quote: Quote): jsPDF {
 			sanitize(l.qty),
 			// The 1604 asterisk note is its own paragraph under the code.
 			l.codeNote ? sanitize(l.code) + "\n\n" + sanitize(l.codeNote) : sanitize(l.code),
-			// Placeholder rows sized like the real content; drawn manually below.
-			[...descParts[i].nameLines, "", ...descParts[i].specLines].join("\n"),
+			// Placeholder sized like the real content; drawn manually below. The
+			// descIndex rides on the cell (cell.raw) because pagination can hand
+			// hooks a row whose index no longer maps into quote.lines.
+			{ content: [...descParts[i].nameLines, "", ...descParts[i].specLines].join("\n"), descIndex: i },
 			l.priceText,
-		]),
+		] as RowInput),
 		willDrawCell: (data) => {
-			if (data.section === "body" && data.column.index === 2) {
+			if (data.section === "body" && descIndexOf(data.cell.raw) != null) {
 				data.cell.text = []; // suppress the uniform-style draw
 			}
 		},
 		didDrawCell: (data) => {
-			if (data.section !== "body" || data.column.index !== 2) return;
-			const { nameLines, specLines } = descParts[data.row.index];
+			if (data.section !== "body") return;
+			const idx = descIndexOf(data.cell.raw);
+			if (idx == null) return;
+			const { nameLines, specLines } = descParts[idx];
 			const totalLines = nameLines.length + (specLines.length ? 1 + specLines.length : 0);
 			const cx = data.cell.x + data.cell.width / 2;
 			// Vertically center the block, first baseline ≈ top + 0.8 × line height.
