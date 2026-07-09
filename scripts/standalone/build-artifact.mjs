@@ -76,8 +76,8 @@ const PRICE_FUNCTIONS = `  function priceRows(res) {
     });
     res.systemExtras.forEach(function (p) {
       rows += '<tr><td>' + esc(p.product) + '</td><td class="num">' + esc(p.price) +
-        '</td><td><span class="badge warn" title="' + esc(p.sourceName) + '">#' +
-        esc(p.sourceCode) + ' \\u00b7 sister</span></td></tr>';
+        '</td><td><span class="badge warn" style="white-space:normal">#' +
+        esc(p.sourceCode) + ' \\u00b7 ' + esc(p.sourceName) + '</span></td></tr>';
     });
     return rows;
   }
