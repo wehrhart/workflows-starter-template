@@ -6,6 +6,11 @@ export interface ApprovedProduct {
 	product: string;
 	/** Estimated Approved Price string as stored in KAIRUKU, e.g. "$950.00". */
 	price: string;
+	/**
+	 * Set when this product is approved here but had no price ($0), so the price
+	 * was borrowed from a sister facility that has a real one.
+	 */
+	priceFrom?: { code: string; name: string };
 }
 
 /** A single facility snapshot baked from KAIRUKU. */

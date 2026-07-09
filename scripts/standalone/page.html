@@ -470,8 +470,11 @@
   function priceRows(res) {
     var rows = "";
     res.approved.forEach(function (p) {
+      var src = '<span class="badge ok">This facility</span>';
+      if (p.priceFrom) src += ' <span style="color:var(--muted);font-size:11px">price via #' +
+        esc(p.priceFrom.code) + ' · ' + esc(p.priceFrom.name) + '</span>';
       rows += '<tr><td>' + esc(p.product) + '</td><td class="num">' + esc(p.price) +
-        '</td><td><span class="badge ok">This facility</span></td></tr>';
+        '</td><td>' + src + '</td></tr>';
     });
     res.systemExtras.forEach(function (p) {
       rows += '<tr><td>' + esc(p.product) + '</td><td class="num">' + esc(p.price) +

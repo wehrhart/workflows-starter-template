@@ -46,7 +46,8 @@ for (const line of lines) {
 		.filter((p) => /approved/i.test(p.status || ""))
 		.map((p) => ({ product: displayName(p.product || ""), price: (p.price || "").trim() || "$0.00" }))
 		.filter((p) => p.product && p.product !== "?");
-	approvedTotal += approved.length;
+	// Duplicate rows (same facility fetched by more than one scrape lane) simply
+	// overwrite — facilities is keyed by code, so each facility appears once.
 	facilities[code] = {
 		name: (f.name || "").trim(),
 		city: (f.city || "").trim(),
@@ -55,12 +56,14 @@ for (const line of lines) {
 		method: sys.method,
 		approved,
 	};
-	if (sys.system) {
-		(systemMembers[sys.system] ||= []).push(code);
-	}
 }
 
-// Sort each system's members numerically for deterministic output.
+// Build system -> members from the DEDUPED facilities (one entry per code),
+// then sort numerically for deterministic output.
+for (const [code, rec] of Object.entries(facilities)) {
+	approvedTotal += rec.approved.length;
+	if (rec.system) (systemMembers[rec.system] ||= []).push(code);
+}
 for (const k of Object.keys(systemMembers)) {
 	systemMembers[k].sort((a, b) => Number(a) - Number(b));
 }

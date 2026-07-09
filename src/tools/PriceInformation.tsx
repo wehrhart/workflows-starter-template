@@ -40,9 +40,14 @@ function ProductTable({ result }: { result: PriceLookup }) {
 								{p.price}
 							</td>
 							<td className="px-3 py-2">
-								<span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+								<span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
 									This facility
 								</span>
+								{p.priceFrom && (
+									<span className="ml-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+										price via #{p.priceFrom.code} · {p.priceFrom.name}
+									</span>
+								)}
 							</td>
 						</tr>
 					))}

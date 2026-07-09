@@ -19,6 +19,12 @@ function keyOf(product: string): string {
 	return product.trim().toLowerCase();
 }
 
+/** Parse a KAIRUKU price string ("$3,000.00") to a number; 0 for blank/"$0.00". */
+export function priceValue(s: string): number {
+	const n = parseFloat(String(s || "").replace(/[^0-9.]/g, ""));
+	return isFinite(n) ? n : 0;
+}
+
 export function lookupPrice(input: string, data: PriceDataset = PRICE_DATA): PriceLookup {
 	const code = normalizeCode(input);
 	const empty: PriceLookup = {
@@ -36,20 +42,14 @@ export function lookupPrice(input: string, data: PriceDataset = PRICE_DATA): Pri
 	const rec = data.facilities[code];
 	if (!rec) return empty;
 
-	const approved = rec.approved.slice();
-	const homeKeys = new Set(approved.map((p) => keyOf(p.product)));
+	const homeKeys = new Set(rec.approved.map((p) => keyOf(p.product)));
 
-	// Gather sister facilities in the same system (excluding self).
+	// Gather sister facilities in the same system (excluding self), ascending by code.
 	const sisters: SisterFacility[] = [];
-	const systemExtras: SystemExtra[] = [];
-	const extraSeen = new Set<string>();
-
+	let sisterCodes: string[] = [];
 	if (rec.system) {
 		const members = data.systems[rec.system] || [];
-		// Deterministic order: numeric ascending by code.
-		const sisterCodes = members
-			.filter((c) => c !== code)
-			.sort((a, b) => Number(a) - Number(b));
+		sisterCodes = members.filter((c) => c !== code).sort((a, b) => Number(a) - Number(b));
 		for (const sc of sisterCodes) {
 			const s = data.facilities[sc];
 			if (!s) continue;
@@ -60,18 +60,66 @@ export function lookupPrice(input: string, data: PriceDataset = PRICE_DATA): Pri
 				state: s.state,
 				approvedCount: s.approved.length,
 			});
+		}
+	}
+
+	// Find where a product is approved across sisters — both the first sister that
+	// has it at all, and the first with a real (non-zero) price. Sisters are in
+	// ascending-code order, so "first" = lowest code.
+	function findInSisters(k: string): {
+		firstAny: { code: string; name: string; price: string } | null;
+		firstReal: { code: string; name: string; price: string } | null;
+	} {
+		let firstAny = null as { code: string; name: string; price: string } | null;
+		let firstReal = null as { code: string; name: string; price: string } | null;
+		for (const sc of sisterCodes) {
+			const s = data.facilities[sc];
+			if (!s) continue;
 			for (const p of s.approved) {
-				const k = keyOf(p.product);
-				// Only products not approved at home, and only the first sister that has each.
-				if (homeKeys.has(k) || extraSeen.has(k)) continue;
-				extraSeen.add(k);
-				systemExtras.push({
-					product: p.product,
-					price: p.price,
-					sourceCode: sc,
-					sourceName: s.name,
-				});
+				if (keyOf(p.product) !== k) continue;
+				const cand = { code: sc, name: s.name, price: p.price };
+				if (!firstAny) firstAny = cand;
+				if (!firstReal && priceValue(p.price) > 0) firstReal = cand;
 			}
+		}
+		return { firstAny, firstReal };
+	}
+
+	// Home-approved products. A $0/blank price means someone flipped the status to
+	// Approved but never entered a price — borrow a real price from a sister.
+	const approved = rec.approved.map((p) => {
+		if (priceValue(p.price) > 0) return { product: p.product, price: p.price };
+		const found = findInSisters(keyOf(p.product));
+		if (found.firstReal) {
+			return {
+				product: p.product,
+				price: found.firstReal.price,
+				priceFrom: { code: found.firstReal.code, name: found.firstReal.name },
+			};
+		}
+		return { product: p.product, price: p.price };
+	});
+
+	// Products approved only at sister facilities (not at home). For each, prefer a
+	// sister with a real price over one that left it at $0.
+	const systemExtras: SystemExtra[] = [];
+	const extraSeen = new Set<string>();
+	for (const sc of sisterCodes) {
+		const s = data.facilities[sc];
+		if (!s) continue;
+		for (const p of s.approved) {
+			const k = keyOf(p.product);
+			if (homeKeys.has(k) || extraSeen.has(k)) continue;
+			extraSeen.add(k);
+			const found = findInSisters(k);
+			const src = found.firstReal || found.firstAny;
+			if (!src) continue;
+			systemExtras.push({
+				product: p.product,
+				price: src.price,
+				sourceCode: src.code,
+				sourceName: src.name,
+			});
 		}
 	}
 
@@ -107,7 +155,8 @@ export function formatReport(r: PriceLookup): string {
 	lines.push(`${r.facility.name} (#${r.code}) — ${r.facility.city}, ${r.facility.state}`);
 	lines.push("");
 	if (r.approved.length) {
-		for (const p of r.approved) lines.push(`${p.product} - ${p.price}`);
+		for (const p of r.approved)
+			lines.push(`${p.product} - ${p.price}${p.priceFrom ? ` (price via #${p.priceFrom.code})` : ""}`);
 	} else {
 		lines.push("(no products approved at this facility)");
 	}
