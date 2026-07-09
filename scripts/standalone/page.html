@@ -585,18 +585,18 @@
       if (quotePdfUrl) { URL.revokeObjectURL(quotePdfUrl); quotePdfUrl = null; }
       var blob = Q.pdfBlob(quote);
       quotePdfUrl = URL.createObjectURL(blob);
-      // Download immediately — we're inside the button's click gesture, so the
-      // browser saves the file in one click. Keep a real <a download> below as
-      // a fallback ("download again") for hosts that block the scripted click.
-      var a = document.createElement("a");
-      a.href = quotePdfUrl;
-      a.download = quote.fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      // Download immediately — we're inside the button's click gesture.
+      // Q.save escapes sandboxed-iframe hosts (like the artifact page) via a
+      // popup trampoline, so one click saves the file with the right name.
+      Q.save(quotePdfUrl, quote.fileName);
       result.innerHTML = '<a class="btn" style="background:var(--ok-bg);color:var(--ok-text)" href="' +
-        quotePdfUrl + '" download="' + esc(quote.fileName) + '" target="_blank" rel="noopener">Saved “' +
+        quotePdfUrl + '" download="' + esc(quote.fileName) + '" id="q_again">Saved “' +
         esc(quote.fileName) + '” — download again</a>';
+      var again = document.getElementById("q_again");
+      if (again) again.onclick = function (e) {
+        e.preventDefault();
+        Q.save(quotePdfUrl, quote.fileName);
+      };
     } catch (e) {
       err.textContent = "Could not generate the PDF: " + String((e && e.message) || e);
     }

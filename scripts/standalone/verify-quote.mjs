@@ -1,8 +1,10 @@
 /**
  * Drive the Price Quote tool in the standalone page, like a user would:
- * fill the form, hit Generate PDF, and expect the download to fire in ONE
- * click. Runs twice — as a top-level page, then inside a cross-origin
- * sandboxed iframe that simulates the artifact host.
+ * fill the form, hit Generate PDF, and expect the file to save in ONE click.
+ *
+ * Phase 1 runs the page top-level (plain <a download> path). Phase 2 embeds it
+ * in a cross-origin iframe whose sandbox BLOCKS downloads (like the hosted
+ * artifact) — there the popup-trampoline must deliver the download instead.
  */
 import { chromium } from "playwright";
 import { writeFileSync, readFileSync } from "node:fs";
@@ -11,8 +13,6 @@ import { join } from "node:path";
 import http from "node:http";
 
 const pageHtml = readFileSync("scripts/standalone/abyrx-tools.html");
-
-// Serve the page so the iframe phase has a real, distinct origin.
 const server = http.createServer((req, res) => {
 	res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
 	res.end(pageHtml);
@@ -24,7 +24,7 @@ const browser = await chromium.launch({
 	executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
 });
 
-async function fillAndGenerate(page, scope) {
+async function fill(scope) {
 	await scope.locator('.toolcard[data-nav="price-quote"]').click();
 	await scope.locator("#q_hospital").fill("Jackson Health System");
 	await scope.locator("#q_street").fill("1611 NW 12th Avenue");
@@ -34,12 +34,6 @@ async function fillAndGenerate(page, scope) {
 	await scope.locator('[data-price="OS-MON-1001"]').fill("1748");
 	await scope.locator('[data-price="OS-MON-1604"]').fill("833");
 	await scope.locator('[data-price="OS-401"]').fill("224");
-	// ONE click on Generate must fire the download.
-	const [dl] = await Promise.all([
-		page.waitForEvent("download", { timeout: 10000 }),
-		scope.locator("#q_go").click(),
-	]);
-	return dl;
 }
 
 // ---- Phase 1: top-level page ----
@@ -57,44 +51,69 @@ async function fillAndGenerate(page, scope) {
 	const homeHasQuote = await page
 		.locator(".toolcard .tname", { hasText: "Price Quote Generator" })
 		.count();
-	const dl = await fillAndGenerate(page, page);
+	await fill(page);
+	const [dl] = await Promise.all([
+		page.waitForEvent("download", { timeout: 10000 }),
+		page.locator("#q_go").click(),
+	]);
 	const stream = await dl.createReadStream();
 	const chunks = [];
 	for await (const c of stream) chunks.push(c);
 	const bytes = Buffer.concat(chunks);
 	const outPath = join(tmpdir(), "quote-verify.pdf");
 	writeFileSync(outPath, bytes);
-	const fallback = await page.locator("#q_result a").innerText();
 
 	console.log("== top-level page ==");
 	console.log("home has Price Quote card:", homeHasQuote === 1);
 	console.log("one-click download name:", dl.suggestedFilename());
 	console.log("pdf bytes:", bytes.length, "magic:", bytes.slice(0, 5).toString("latin1"));
-	console.log("fallback link:", fallback.replace(/\s+/g, " ").trim());
 	console.log("saved:", outPath);
 	console.log("external network requests:", external.length ? external : "(none)");
 	console.log("page errors:", errors.length ? errors : "(none)");
 	await page.close();
 }
 
-// ---- Phase 2: cross-origin sandboxed iframe (artifact-host-like) ----
+// ---- Phase 2: artifact-like sandbox (downloads BLOCKED, popups may escape) ----
 {
-	const page = await browser.newPage({ acceptDownloads: true });
+	const ctx = await browser.newContext({ acceptDownloads: true });
+	const downloads = [];
+	ctx.on("page", (p) => p.on("download", (d) => downloads.push(d)));
+	const page = await ctx.newPage();
+	page.on("download", (d) => downloads.push(d));
+
 	await page.setContent(
-		`<!doctype html><meta charset="utf-8"><iframe id="f" sandbox="allow-scripts allow-same-origin allow-downloads allow-popups" src="${src}" style="width:100%;height:720px;border:0"></iframe>`,
+		`<!doctype html><meta charset="utf-8"><iframe id="f" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" src="${src}" style="width:100%;height:720px;border:0"></iframe>`,
 		{ waitUntil: "load" },
 	);
 	const frame = page.frameLocator("#f");
-	let outcome;
-	try {
-		const dl = await fillAndGenerate(page, frame);
-		outcome = "one-click download fired → " + dl.suggestedFilename();
-	} catch (e) {
-		outcome = "NO download (" + String(e).split("\n")[0] + ")";
+	await fill(frame);
+	await frame.locator("#q_go").click();
+	await frame.locator("#q_result a").waitFor({ timeout: 8000 });
+	// give the trampoline popup a moment to fire its download
+	const deadline = Date.now() + 8000;
+	while (!downloads.length && Date.now() < deadline) {
+		await new Promise((r) => setTimeout(r, 200));
 	}
-	console.log("== sandboxed iframe ==");
-	console.log(outcome);
-	await page.close();
+	console.log("== sandboxed iframe (downloads blocked) ==");
+	console.log(
+		downloads.length
+			? "one-click download via trampoline → " + downloads[0].suggestedFilename()
+			: "NO download",
+	);
+
+	// "download again" must work with a plain left-click too
+	downloads.length = 0;
+	await frame.locator("#q_result a").click();
+	const deadline2 = Date.now() + 8000;
+	while (!downloads.length && Date.now() < deadline2) {
+		await new Promise((r) => setTimeout(r, 200));
+	}
+	console.log(
+		downloads.length
+			? "download-again link → " + downloads[0].suggestedFilename()
+			: "download-again link: NO download",
+	);
+	await ctx.close();
 }
 
 await browser.close();

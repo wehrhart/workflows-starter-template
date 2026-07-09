@@ -8,6 +8,7 @@ import {
 	type QuoteHeader,
 } from "../../worker/lib/quote";
 import { buildQuotePdfBlob } from "./quote-pdf";
+import { saveBlobUrl } from "./save-file";
 
 const EMPTY_HEADER: QuoteHeader = {
 	hospitalName: "",
@@ -87,15 +88,9 @@ export function PriceQuote() {
 		try {
 			const blob = buildQuotePdfBlob(quote);
 			const url = URL.createObjectURL(blob);
-			// Download immediately — we're inside the button's click gesture, so
-			// the browser saves the file in one click. The link kept below is a
-			// fallback ("Download again") in case the auto-download is blocked.
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = quote.fileName;
-			document.body.appendChild(a);
-			a.click();
-			a.remove();
+			// Download immediately — we're inside the button's click gesture.
+			// saveBlobUrl handles sandboxed-iframe hosts (artifact page) too.
+			saveBlobUrl(url, quote.fileName);
 			setPdf({ url, fileName: quote.fileName, count: quote.lines.length });
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Could not generate the PDF.");
@@ -222,8 +217,10 @@ export function PriceQuote() {
 						<a
 							href={pdf.url}
 							download={pdf.fileName}
-							target="_blank"
-							rel="noopener"
+							onClick={(e) => {
+								e.preventDefault();
+								saveBlobUrl(pdf.url, pdf.fileName);
+							}}
 							className="ml-auto rounded-xl border border-emerald-500 bg-emerald-50 px-5 py-2.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
 						>
 							Saved “{pdf.fileName}” ({pdf.count} line{pdf.count === 1 ? "" : "s"}) — download again
