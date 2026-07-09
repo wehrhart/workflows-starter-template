@@ -235,7 +235,7 @@
   td { padding: 8px 12px; border-top: 1px solid var(--border); color: var(--text); vertical-align: top; }
   td.num { font-variant-numeric: tabular-nums; }
   .trunc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .badge { display: inline-block; border-radius: 6px; padding: 2px 8px; font-weight: 500; }
+  .badge { display: inline-block; border-radius: 6px; padding: 2px 8px; font-weight: 500; background: var(--chip); color: var(--muted); white-space: nowrap; }
   .badge.ok { background: var(--ok-bg); color: var(--ok-text); }
   .badge.warn { background: var(--warn-bg); color: var(--warn-text); }
   .badge.err { background: var(--err-bg); color: var(--err-text); }
@@ -384,8 +384,10 @@
   function resultView() {
     if (!lastBatch) return "";
     var b = lastBatch;
+    var dupes = b.files.filter(function (f) { return f.routed === "duplicate"; }).length;
     var chips = '<span class="chip ok">+' + b.added + ' row' + (b.added === 1 ? "" : "s") + ' added</span>';
     if (b.addedMissing > 0) chips += '<span class="chip warn">' + b.addedMissing + ' missing Case ID</span>';
+    if (dupes > 0) chips += '<span class="chip neutral">' + dupes + ' duplicate skipped</span>';
     if (b.errors.length) chips += '<span class="chip err">' + b.errors.length + ' unreadable</span>';
     chips += '<span class="chip neutral">master now: ' + master.uploadRows.length + ' rows</span>';
 
@@ -393,7 +395,9 @@
       var loc = f.locationId ? esc(f.locationId + (f.locationName ? " · " + f.locationName : "")) : "—";
       var badge = f.routed === "upload"
         ? '<span class="badge ok">Added</span>'
-        : '<span class="badge warn">Missing Case ID</span>';
+        : f.routed === "duplicate"
+          ? '<span class="badge">Duplicate — skipped</span>'
+          : '<span class="badge warn">Missing Case ID</span>';
       return '<tr><td class="trunc">' + esc(f.sourceFile) + '</td><td>' + esc(f.caseId || "—") +
         '</td><td>' + loc + '</td><td class="num">' + f.lineItems + '</td><td>' + badge + '</td></tr>';
     }).join("");
@@ -477,10 +481,15 @@
         errors.push({ name: f.name, msg: String(e && e.message || e) });
       }
     }
-    var batch = K.toRows(sheets);
+    var knownCaseIds = master.uploadRows.map(function (r) { return r.B; })
+      .filter(function (b) { return !!b; });
+    var batch = K.toRows(sheets, knownCaseIds);
     master.uploadRows = master.uploadRows.concat(batch.uploadRows);
     master.missingRows = master.missingRows.concat(batch.missingRows);
-    master.files = master.files.concat(batch.files);
+    // Skipped duplicates added nothing to the master — don't count them as sheets.
+    master.files = master.files.concat(batch.files.filter(function (f) {
+      return f.routed !== "duplicate";
+    }));
     save();
     lastBatch = {
       added: batch.uploadRows.length,

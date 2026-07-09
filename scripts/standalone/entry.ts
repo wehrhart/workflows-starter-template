@@ -25,9 +25,13 @@ async function parse(name: string, bytes: Uint8Array): Promise<BillSheet> {
 	return extractBillSheet(name, bytes);
 }
 
-/** Map parsed bill sheets to upload rows + missing-case rows + per-file summary. */
-function toRows(sheets: BillSheet[]) {
-	return processBillSheets(sheets);
+/**
+ * Map parsed bill sheets to upload rows + missing-case rows + per-file summary.
+ * `knownCaseIds` are the Case IDs already in the master sheet, so a re-submitted
+ * bill sheet is skipped instead of duplicated.
+ */
+function toRows(sheets: BillSheet[], knownCaseIds: string[] = []) {
+	return processBillSheets(sheets, knownCaseIds);
 }
 
 /** Build the filled .xlsm from accumulated rows. */

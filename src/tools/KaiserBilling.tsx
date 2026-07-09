@@ -73,6 +73,10 @@ function FileTable({ files }: { files: FileSummary[] }) {
 									<span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
 										Added
 									</span>
+								) : f.routed === "duplicate" ? (
+									<span className="rounded bg-neutral-200 px-2 py-0.5 text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+										Duplicate — skipped
+									</span>
 								) : (
 									<span className="rounded bg-amber-100 px-2 py-0.5 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
 										Missing Case ID
@@ -341,6 +345,17 @@ export function KaiserBilling() {
 									{state.result.addedMissing > 0 && (
 										<span className="rounded-lg bg-amber-100 px-3 py-1.5 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
 											{state.result.addedMissing} missing Case ID
+										</span>
+									)}
+									{state.result.files.filter((f) => f.routed === "duplicate")
+										.length > 0 && (
+										<span className="rounded-lg bg-neutral-200 px-3 py-1.5 font-medium text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+											{
+												state.result.files.filter(
+													(f) => f.routed === "duplicate",
+												).length
+											}{" "}
+											duplicate skipped
 										</span>
 									)}
 									<span className="rounded-lg bg-neutral-100 px-3 py-1.5 font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">

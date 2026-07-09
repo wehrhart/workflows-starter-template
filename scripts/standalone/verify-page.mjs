@@ -37,6 +37,15 @@ const row0 = await page.locator("table tbody tr").first().innerText();
 const chips = await page.locator(".chips").innerText();
 const masterMeta = await page.locator(".master .meta").innerText();
 
+// Submit the SAME bill sheet again — it must be skipped, not duplicated.
+await page.locator("#more").click();
+await page.locator("#file").setInputFiles(PDF);
+await page.locator("#go").click();
+await page.locator("table tbody tr").first().waitFor({ timeout: 15000 });
+const dupRow = await page.locator("table tbody tr").first().innerText();
+const dupChips = await page.locator(".chips").innerText();
+const masterMetaAfter = await page.locator(".master .meta").innerText();
+
 // Download the .xlsm and inspect its first bytes.
 const [dl] = await Promise.all([
 	page.waitForEvent("download"),
@@ -53,6 +62,10 @@ console.log("home has Kaiser card:", homeHasKaiser === 1);
 console.log("result row 0:", row0.replace(/\s+/g, " ").trim());
 console.log("chips:", chips.replace(/\s+/g, " ").trim());
 console.log("master meta:", masterMeta.trim());
+console.log("-- resubmit same sheet --");
+console.log("dup row 0:", dupRow.replace(/\s+/g, " ").trim());
+console.log("dup chips:", dupChips.replace(/\s+/g, " ").trim());
+console.log("master meta after (should be 1 row from 1 bill sheet):", masterMetaAfter.trim());
 console.log("download name:", dl.suggestedFilename());
 console.log("download bytes:", bytes.length, "magic:", bytes.slice(0, 2).toString("latin1"));
 console.log("external network requests:", external.length ? external : "(none)");

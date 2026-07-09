@@ -63,10 +63,19 @@ export class BillSheetWorkflow extends WorkflowEntrypoint<Env, BillSheetParams> 
 			await notify(PIPELINE_STEPS[0], "completed");
 
 			// Step 2: resolve locations, combine products, split missing-Case-ID.
+			// Skip any sheet whose Case ID is already in the master (one entry per
+			// Case ID) so a re-submitted bill sheet can't duplicate its rows.
 			await notify(PIPELINE_STEPS[1], "running");
-			const result = await step.do(PIPELINE_STEPS[1], async () =>
-				processBillSheets(sheets),
-			);
+			const result = await step.do(PIPELINE_STEPS[1], async () => {
+				const ledger = this.env.LEDGER.get(
+					this.env.LEDGER.idFromName("default"),
+				);
+				const snap = await ledger.snapshot();
+				const knownCaseIds = snap.uploadRows
+					.map((r) => r.B)
+					.filter((b): b is string => !!b);
+				return processBillSheets(sheets, knownCaseIds);
+			});
 			await notify(PIPELINE_STEPS[1], "completed");
 
 			// Step 3: append this batch's rows to the running master sheet.
@@ -78,7 +87,9 @@ export class BillSheetWorkflow extends WorkflowEntrypoint<Env, BillSheetParams> 
 				const state = await stub.append({
 					uploadRows: result.uploadRows,
 					missingRows: result.missingRows,
-					files: result.files,
+					// Skipped duplicates added no rows — keep them out of the master's
+					// file list so its sheet count stays accurate.
+					files: result.files.filter((f) => f.routed !== "duplicate"),
 				});
 				return {
 					addedRows: result.uploadRows.length,

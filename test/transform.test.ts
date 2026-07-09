@@ -146,4 +146,42 @@ describe("processBillSheets", () => {
 		expect(result.files[0].routed).toBe("missing-case-id");
 		expect(result.files[1].routed).toBe("upload");
 	});
+
+	it("skips a sheet whose Case ID is already in the master", () => {
+		const sheet: BillSheet = { ...abyrx80485, caseId: "12345678" };
+		const result = processBillSheets([sheet], ["12345678"]);
+		expect(result.uploadRows).toHaveLength(0);
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0].routed).toBe("duplicate");
+		expect(result.files[0].note).toContain("already in the master");
+	});
+
+	it("adds a new Case ID that is not yet in the master", () => {
+		const sheet: BillSheet = { ...abyrx80485, caseId: "99999999" };
+		const result = processBillSheets([sheet], ["12345678"]);
+		expect(result.uploadRows).toHaveLength(1);
+		expect(result.files[0].routed).toBe("upload");
+	});
+
+	it("dedupes the same Case ID repeated within one batch", () => {
+		const a: BillSheet = { ...abyrx80485, caseId: "55555555" };
+		const b: BillSheet = { ...abyrx80485, caseId: "55555555", sourceFile: "again.pdf" };
+		const result = processBillSheets([a, b]);
+		expect(result.uploadRows).toHaveLength(1); // only the first sheet's rows
+		expect(result.files.map((f) => f.routed)).toEqual(["upload", "duplicate"]);
+	});
+
+	it("keeps multiple product rows for a single new Case ID", () => {
+		// Two DIFFERENT products on one sheet must both stay (dedup is per sheet).
+		const sheet: BillSheet = {
+			...abyrx80485,
+			caseId: "42424242",
+			products: [
+				{ productNumber: "A", description: "a", unitsUsed: 1, pricePerUnit: 10, totalPrice: 10 },
+				{ productNumber: "B", description: "b", unitsUsed: 1, pricePerUnit: 20, totalPrice: 20 },
+			],
+		};
+		const result = processBillSheets([sheet]);
+		expect(result.uploadRows).toHaveLength(2);
+	});
 });

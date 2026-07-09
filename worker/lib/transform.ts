@@ -144,16 +144,47 @@ export function billSheetToRows(sheet: BillSheet): {
 	};
 }
 
-/** Process a batch of parsed bill sheets into the full upload/missing row sets. */
-export function processBillSheets(sheets: BillSheet[]): ProcessResult {
+/**
+ * Process a batch of parsed bill sheets into the full upload/missing row sets.
+ *
+ * `knownCaseIds` are the Case IDs already in the master sheet. A sheet whose
+ * Case ID is already known — or one that repeats within this same batch — is a
+ * duplicate: it contributes no rows and is reported as `routed: "duplicate"`,
+ * so re-submitting the same bill sheet can't double it up. (One Case ID = one
+ * entry. Sheets with no Case ID still route to the Missing Case ID tab.)
+ */
+export function processBillSheets(
+	sheets: BillSheet[],
+	knownCaseIds: Iterable<string> = [],
+): ProcessResult {
+	const seen = new Set<string>();
+	for (const id of knownCaseIds) {
+		const t = (id ?? "").trim();
+		if (t) seen.add(t);
+	}
+
 	const uploadRows: UploadRow[] = [];
 	const missingRows: MissingRow[] = [];
 	const files: ProcessResult["files"] = [];
 	for (const sheet of sheets) {
+		const id = sheet.caseId?.trim();
+		if (id && seen.has(id)) {
+			files.push({
+				sourceFile: sheet.sourceFile,
+				caseId: id,
+				locationId: null,
+				locationName: null,
+				lineItems: 0,
+				routed: "duplicate",
+				note: `Case ID ${id} is already in the master sheet — skipped`,
+			});
+			continue;
+		}
 		const r = billSheetToRows(sheet);
 		uploadRows.push(...r.uploadRows);
 		missingRows.push(...r.missingRows);
 		files.push(r.file);
+		if (id) seen.add(id); // guard against the same Case ID repeating in this batch
 	}
 	return { uploadRows, missingRows, files };
 }
