@@ -20,6 +20,15 @@ if (!detailsPath || !systemsPath || !dateArg) {
 const systems = JSON.parse(readFileSync(systemsPath, "utf8"));
 const lines = readFileSync(detailsPath, "utf8").split("\n").filter(Boolean);
 
+// Display-name overrides: KAIRUKU's product label -> how we want it shown.
+// Keyed case-insensitively on the trimmed KAIRUKU name.
+const PRODUCT_RENAME = {
+	"montage 2cc": "MONTAGE 2cc (4-pack)",
+};
+function displayName(name) {
+	return PRODUCT_RENAME[name.trim().toLowerCase()] || name.trim();
+}
+
 const facilities = {};
 const systemMembers = {};
 let approvedTotal = 0;
@@ -35,7 +44,7 @@ for (const line of lines) {
 	const sys = systems[code] || { system: null, method: "singleton" };
 	const approved = (f.prods || [])
 		.filter((p) => /approved/i.test(p.status || ""))
-		.map((p) => ({ product: (p.product || "").trim(), price: (p.price || "").trim() || "$0.00" }))
+		.map((p) => ({ product: displayName(p.product || ""), price: (p.price || "").trim() || "$0.00" }))
 		.filter((p) => p.product && p.product !== "?");
 	approvedTotal += approved.length;
 	facilities[code] = {
