@@ -12,6 +12,10 @@ import { processBillSheets } from "../../worker/lib/transform";
 import { buildFilledWorkbook } from "../../worker/lib/xlsx-inject";
 import { TEMPLATE_XLSM_BASE64 } from "../../worker/assets/template";
 import type { BillSheet, UploadRow, MissingRow } from "../../worker/lib/types";
+import { QUOTE_INPUTS, buildQuote, parsePrice, formatMoney } from "../../worker/lib/quote";
+import type { PriceMap, QuoteHeader } from "../../worker/lib/quote";
+import { buildQuotePdf, buildQuotePdfBlob } from "../../src/tools/quote-pdf";
+import { saveBlob } from "../../src/tools/save-file";
 
 function base64ToBytes(b64: string): Uint8Array {
 	const bin = atob(b64);
@@ -42,3 +46,22 @@ function xlsm(uploadRows: UploadRow[], missingRows: MissingRow[]): Uint8Array {
 export const AbyrxKaiser = { parse, toRows, xlsm };
 // Also hang it on the global so the inline page script can reach it.
 (globalThis as unknown as { AbyrxKaiser: typeof AbyrxKaiser }).AbyrxKaiser = AbyrxKaiser;
+
+/**
+ * Price Quote tool — the SAME catalog/transform logic the React app uses, plus
+ * the jsPDF renderer, exposed for the standalone page's inline script. A quote
+ * is built from the hospital header + a {code → price} map and rendered to a PDF
+ * that matches the ABYRX template.
+ */
+export const AbyrxQuote = {
+	inputs: QUOTE_INPUTS,
+	parsePrice,
+	formatMoney,
+	build: (header: QuoteHeader, prices: PriceMap, today?: Date) =>
+		buildQuote(header, prices, today ?? new Date()),
+	pdf: buildQuotePdf,
+	pdfBlob: buildQuotePdfBlob,
+	/** Download a Blob as a named file, escaping sandboxed-iframe hosts. */
+	save: saveBlob,
+};
+(globalThis as unknown as { AbyrxQuote: typeof AbyrxQuote }).AbyrxQuote = AbyrxQuote;

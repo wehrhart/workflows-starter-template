@@ -32,9 +32,10 @@ worker-configuration.d.ts
 .env*
 !.env.example
 
-# Local-only source spreadsheets for regenerating reference data
+# Local-only source documents for regenerating reference data / quote assets
 scripts/*.xlsm
 scripts/*.xlsx
+scripts/*.docx
 
 # Generated standalone-page build outputs (rebuild with scripts/standalone/build.mjs)
 scripts/standalone/bundle.js

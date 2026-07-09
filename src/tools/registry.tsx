@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { KaiserBilling } from "./KaiserBilling";
+import { PriceQuote } from "./PriceQuote";
 
 export interface ToolDef {
 	id: string;
@@ -25,6 +26,14 @@ export const TOOLS: ToolDef[] = [
 		icon: "🧾",
 		status: "active",
 		component: KaiserBilling,
+	},
+	{
+		id: "price-quote",
+		name: "Price Quote Generator",
+		tagline: "Hospital + prices → a PDF quote in the ABYRX template",
+		icon: "📄",
+		status: "active",
+		component: PriceQuote,
 	},
 	{
 		id: "coming-soon",
