@@ -599,26 +599,25 @@
     var fields =
       '<div class="grid" style="gap:12px">' +
       '<label style="grid-column:1/-1"><div class="sdesc" style="margin-bottom:4px">Hospital name</div>' +
-      '<input class="qin" id="q_hospital" placeholder="Jackson Health System"></label>' +
+      '<input class="qin" id="q_hospital"></label>' +
       '<label style="grid-column:1/-1"><div class="sdesc" style="margin-bottom:4px">Street address</div>' +
-      '<input class="qin" id="q_street" placeholder="1611 NW 12th Avenue"></label>' +
+      '<input class="qin" id="q_street"></label>' +
       '<label><div class="sdesc" style="margin-bottom:4px">City</div>' +
-      '<input class="qin" id="q_city" placeholder="Miami"></label>' +
+      '<input class="qin" id="q_city"></label>' +
       '<div class="grid" style="grid-template-columns:1fr 1fr;gap:12px">' +
       '<label><div class="sdesc" style="margin-bottom:4px">State</div>' +
-      '<input class="qin" id="q_state" placeholder="FL"></label>' +
+      '<input class="qin" id="q_state"></label>' +
       '<label><div class="sdesc" style="margin-bottom:4px">ZIP</div>' +
-      '<input class="qin" id="q_zip" placeholder="33136"></label></div>' +
+      '<input class="qin" id="q_zip"></label></div>' +
       '</div>';
 
     var rows = Q.inputs.map(function (p) {
-      var ph = Q.formatMoney(p.defaultPrice).replace("$", "");
       return '<div class="qrow">' +
         '<div class="qrow-l"><div class="qcode">' + esc(p.code) + '</div>' +
         '<div class="qlabel">' + esc(p.label) + '</div></div>' +
         '<div class="qprice"><span class="qdollar">$</span>' +
         '<input class="qin qmoney" inputmode="decimal" data-price="' + esc(p.id) +
-        '" placeholder="' + esc(ph) + '"></div></div>';
+        '"></div></div>';
     }).join("");
 
     return '<div class="wrap">' +

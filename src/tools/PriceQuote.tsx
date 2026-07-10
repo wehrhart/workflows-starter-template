@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
 	QUOTE_INPUTS,
 	buildQuote,
-	formatMoney,
 	parsePrice,
 	type PriceMap,
 	type QuoteHeader,
@@ -22,13 +21,11 @@ function Field({
 	label,
 	value,
 	onChange,
-	placeholder,
 	className,
 }: {
 	label: string;
 	value: string;
 	onChange: (v: string) => void;
-	placeholder?: string;
 	className?: string;
 }) {
 	return (
@@ -39,7 +36,6 @@ function Field({
 			<input
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				placeholder={placeholder}
 				className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-800 outline-none focus:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
 			/>
 		</label>
@@ -128,34 +124,29 @@ export function PriceQuote() {
 							label="Hospital name"
 							value={header.hospitalName}
 							onChange={(v) => setField("hospitalName", v)}
-							placeholder="Jackson Health System"
 							className="sm:col-span-2"
 						/>
 						<Field
 							label="Street address"
 							value={header.streetAddress}
 							onChange={(v) => setField("streetAddress", v)}
-							placeholder="1611 NW 12th Avenue"
 							className="sm:col-span-2"
 						/>
 						<Field
 							label="City"
 							value={header.city}
 							onChange={(v) => setField("city", v)}
-							placeholder="Miami"
 						/>
 						<div className="grid grid-cols-2 gap-3">
 							<Field
 								label="State"
 								value={header.state}
 								onChange={(v) => setField("state", v)}
-								placeholder="FL"
 							/>
 							<Field
 								label="ZIP"
 								value={header.zip}
 								onChange={(v) => setField("zip", v)}
-								placeholder="33136"
 							/>
 						</div>
 					</div>
@@ -190,7 +181,6 @@ export function PriceQuote() {
 										inputMode="decimal"
 										value={prices[p.id] ?? ""}
 										onChange={(e) => setPrice(p.id, e.target.value)}
-										placeholder={formatMoney(p.defaultPrice).replace("$", "")}
 										className="w-full rounded-lg border border-neutral-300 bg-white py-2 pl-6 pr-2 text-right text-sm tabular-nums text-neutral-800 outline-none focus:border-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
 									/>
 								</div>
