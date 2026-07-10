@@ -16,6 +16,8 @@ import { QUOTE_INPUTS, buildQuote, parsePrice, formatMoney } from "../../worker/
 import type { PriceMap, QuoteHeader } from "../../worker/lib/quote";
 import { buildQuotePdf, buildQuotePdfBlob } from "../../src/tools/quote-pdf";
 import { saveBlob } from "../../src/tools/save-file";
+import { lookupPrice, formatReport, normalizeCode } from "../../worker/lib/price-lookup";
+import { PRICE_DATA } from "../../worker/lib/price-data";
 
 function base64ToBytes(b64: string): Uint8Array {
 	const bin = atob(b64);
@@ -65,3 +67,13 @@ export const AbyrxQuote = {
 	save: saveBlob,
 };
 (globalThis as unknown as { AbyrxQuote: typeof AbyrxQuote }).AbyrxQuote = AbyrxQuote;
+
+/** Price Information tool — pure offline lookup over the baked KAIRUKU snapshot. */
+export const AbyrxPrice = {
+	lookup: (code: string) => lookupPrice(code),
+	report: formatReport,
+	normalizeCode,
+	generatedAt: PRICE_DATA.generatedAt,
+	facilityCount: PRICE_DATA.facilityCount,
+};
+(globalThis as unknown as { AbyrxPrice: typeof AbyrxPrice }).AbyrxPrice = AbyrxPrice;

@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { KairukuSession } from "./KairukuSession";
 import { KaiserBilling } from "./KaiserBilling";
+import { PriceInformation } from "./PriceInformation";
 import { PriceQuote } from "./PriceQuote";
 
 export interface ToolDef {
@@ -35,6 +36,14 @@ export const TOOLS: ToolDef[] = [
 		icon: "📄",
 		status: "active",
 		component: PriceQuote,
+	},
+	{
+		id: "price-information",
+		name: "Price Information",
+		tagline: "Facility code → approved products & prices, across the health system",
+		icon: "💲",
+		status: "active",
+		component: PriceInformation,
 	},
 	{
 		id: "kairuku-session",
