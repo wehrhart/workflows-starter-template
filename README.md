@@ -23,6 +23,15 @@ assets" below for how the embedded brand images and catalog are sourced.
 PDFs are read **locally** (no cloud AI), so the whole app runs on your machine
 with `npm run dev` — no login, no API keys.
 
+A third tool is **Kairuku Session** — the login/session foundation for future
+Kairuku workflows. It opens a real Chromium window (Playwright, persistent
+profile) at <https://beta.kairuku.com/>, you log in and enter your MFA code by
+hand, and once login is detected the window closes itself and the tab shows
+**Kairuku: Live / Ready**. The session lives in the gitignored
+`.kairuku-browser-profile/` folder, so it survives app restarts. See
+"Kairuku session service" below for how to run it and how future tools reuse
+the session.
+
 ## Adding another tool
 
 Tools live in `src/tools/`. To add one:
@@ -60,6 +69,41 @@ a tappable link. To surface a new tool there too:
 
    `bundle.js` and `abyrx-tools.html` are generated (gitignored); rebuild them
    from source whenever a tool changes.
+
+## Kairuku session service
+
+A browser page (and the Cloudflare worker) can't launch a desktop browser, so
+the Kairuku Session tab talks to a small local sidecar that wraps Playwright.
+Run it in a second terminal next to `npm run dev`:
+
+```bash
+npx playwright install chromium   # one time, if you've never installed it
+npm run kairuku:session           # serves http://127.0.0.1:5281 (loopback only)
+```
+
+Then open the **Kairuku Session** tab → **Open Kairuku Login Window** → log in
+(password + MFA typed by you, in the real browser window) → the window closes
+by itself and the tab turns green. **Check Session Status** re-verifies the
+saved session headlessly, e.g. after restarting the app.
+
+- The session is stored only as a normal Chromium profile in
+  `.kairuku-browser-profile/` (gitignored). No usernames, passwords, MFA
+  codes, cookies, or tokens are ever written to the repo or the logs.
+- Login detection defaults to a conservative heuristic (window stays open
+  while any login/MFA form is showing). After your first login, set
+  `KAIRUKU_LOGGED_IN_SELECTOR` in
+  `scripts/kairuku/kairukuSessionManager.ts` to a selector that only exists
+  when logged in — it's clearly marked at the top of the file.
+- Future Kairuku tools should start with:
+
+  ```ts
+  import { requireKairukuSession } from "./scripts/kairuku/kairukuSessionManager.ts";
+  const { page } = await requireKairukuSession(); // authenticated Playwright page
+  ```
+
+  If the session has expired it throws a `RELOGIN_REQUIRED` error (and the
+  tab shows **Re-login required**) — send the user back to the Kairuku
+  Session tab.
 
 ## How it works
 

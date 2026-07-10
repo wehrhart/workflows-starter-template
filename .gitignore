@@ -32,6 +32,13 @@ worker-configuration.d.ts
 .env*
 !.env.example
 
+# Kairuku local browser session — holds the logged-in cookies. NEVER commit.
+.kairuku-browser-profile/
+# Kairuku debug output (screenshots / traces), if any are ever taken
+kairuku-*.png
+kairuku-*.zip
+kairuku-*.trace
+
 # Local-only source documents for regenerating reference data / quote assets
 scripts/*.xlsm
 scripts/*.xlsx

@@ -1,0 +1,458 @@
+/**
+ * Kairuku Session Manager — the shared login/session foundation for every
+ * future Kairuku tool in Abyrx Tools.
+ *
+ * What it does
+ *   • Opens a real (headed) Chromium window at the Kairuku login page so YOU
+ *     type your username / password / MFA code by hand. Nothing is captured.
+ *   • Uses a Playwright *persistent* browser profile (a local folder) so the
+ *     logged-in cookies survive between runs — log in once, reuse everywhere.
+ *   • Watches the window until it detects you are authenticated, then closes
+ *     the window automatically.
+ *   • Lets future tools call `requireKairukuSession()` to get an
+ *     authenticated Playwright page, or a clear RELOGIN_REQUIRED error.
+ *
+ * What it never does
+ *   • It never reads, stores, or logs your username, password, MFA code,
+ *     cookies, tokens, or session storage. The only thing persisted is the
+ *     browser's own profile directory (gitignored), exactly as if you had
+ *     logged into Chrome yourself.
+ *   • It never submits, edits, downloads, or scrapes Kairuku data. It only
+ *     authenticates and hands a logged-in page to future tools.
+ *
+ * Runs under plain Node (not the Cloudflare worker):
+ *   node --experimental-strip-types scripts/kairuku/kairuku-session-server.ts
+ */
+
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { chromium } from "playwright";
+import type { BrowserContext, Page } from "playwright";
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+/** The Kairuku login URL (env-overridable for testing against a mock). */
+export const KAIRUKU_URL = process.env.KAIRUKU_URL ?? "https://beta.kairuku.com/";
+
+/**
+ * Where the persistent browser profile lives (cookies, local storage — the
+ * browser's own encrypted-at-rest state). Gitignored; never commit it.
+ */
+export const KAIRUKU_PROFILE_DIR = path.resolve(
+	process.env.KAIRUKU_PROFILE_DIR ?? ".kairuku-browser-profile",
+);
+
+/**
+ * ── UPDATE ME AFTER YOUR FIRST REAL LOGIN ─────────────────────────────────
+ * A CSS selector for something that ONLY exists once you are logged in to
+ * Kairuku — an account/avatar menu, a dashboard heading, a "Log out" button,
+ * a nav bar, etc.
+ *
+ * How to find it: log in once, right-click a clearly logged-in-only element
+ * → Inspect, and copy a stable selector. Examples of the kind of thing that
+ * works well:
+ *   '[data-testid="account-menu"]'
+ *   'nav a[href*="logout"]'
+ *   'button:has-text("Log out")'
+ *
+ * While this is left empty (""), a conservative heuristic is used instead
+ * (see `isAuthenticated` below): "no login/MFA form visible and not on an
+ * auth-looking URL". The heuristic is decent but the selector is better —
+ * set it as soon as you've logged in once and can inspect the page.
+ * Can also be set without code changes via the KAIRUKU_LOGGED_IN_SELECTOR
+ * environment variable.
+ */
+export const KAIRUKU_LOGGED_IN_SELECTOR =
+	process.env.KAIRUKU_LOGGED_IN_SELECTOR ?? "";
+
+/** URL fragments that indicate we are still on a login / MFA / auth screen. */
+const AUTH_URL_HINTS =
+	/log[-_]?in|sign[-_]?in|auth|mfa|two[-_]?factor|2fa|otp|verify|challenge|passwor/i;
+
+// ---------------------------------------------------------------------------
+// Status
+// ---------------------------------------------------------------------------
+
+export type KairukuStatus =
+	| "not_connected" // no session known (fresh profile, or window closed before login)
+	| "login_window_open" // headed window is open, waiting for you to log in
+	| "checking" // actively verifying the stored session
+	| "live" // authenticated — future tools may use the session
+	| "relogin_required"; // stored session exists but is expired / logged out
+
+export interface KairukuStatusReport {
+	status: KairukuStatus;
+	/** Human-readable one-liner for the UI. Never contains secrets. */
+	detail: string;
+	updatedAt: string;
+}
+
+/** Thrown by requireKairukuSession() when the stored session is not usable. */
+export class KairukuReloginRequiredError extends Error {
+	code = "RELOGIN_REQUIRED";
+	constructor(detail?: string) {
+		super(
+			`RELOGIN_REQUIRED: Kairuku session is not live${detail ? ` (${detail})` : ""}. ` +
+				"Open the Kairuku Session tab in Abyrx Tools and log in again.",
+		);
+		this.name = "KairukuReloginRequiredError";
+	}
+}
+
+let status: KairukuStatus = "not_connected";
+let detail = "No Kairuku session yet.";
+let updatedAt = new Date().toISOString();
+
+/**
+ * The one live browser context. A persistent profile can only be opened by a
+ * single browser at a time, so everything funnels through this singleton.
+ * mode: "login" = headed window the user is typing into;
+ *       "session" = background context handed to tools.
+ */
+let activeContext: BrowserContext | null = null;
+let activeMode: "login" | "session" | null = null;
+
+function setStatus(next: KairukuStatus, nextDetail: string) {
+	status = next;
+	detail = nextDetail;
+	updatedAt = new Date().toISOString();
+	// Log status transitions only — never cookies, tokens, or form values.
+	console.log(`[kairuku] status → ${next}: ${nextDetail}`);
+}
+
+export function getKairukuStatus(): KairukuStatusReport {
+	return { status, detail, updatedAt };
+}
+
+// ---------------------------------------------------------------------------
+// Internals
+// ---------------------------------------------------------------------------
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function launchPersistent(headless: boolean): Promise<BrowserContext> {
+	try {
+		return await chromium.launchPersistentContext(KAIRUKU_PROFILE_DIR, {
+			headless,
+			// Natural window size for a login the user drives by hand.
+			viewport: null,
+			// Normally Playwright finds its own Chromium; set this env var only
+			// if you need to point at a specific Chromium/Chrome binary.
+			executablePath: process.env.KAIRUKU_CHROMIUM_PATH || undefined,
+		});
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		if (/executable doesn't exist|browserType.launch/i.test(msg)) {
+			throw new Error(
+				"Playwright's Chromium isn't installed. Run `npx playwright install chromium` once, then try again.",
+			);
+		}
+		throw err;
+	}
+}
+
+async function closeActiveContext() {
+	const ctx = activeContext;
+	activeContext = null;
+	activeMode = null;
+	if (ctx) {
+		try {
+			await ctx.close();
+		} catch {
+			// already closed (e.g. the user closed the window) — fine
+		}
+	}
+}
+
+/** The most recently opened page in the context (login flows may open tabs). */
+function currentPage(ctx: BrowserContext): Page | null {
+	const pages = ctx.pages();
+	return pages.length ? pages[pages.length - 1] : null;
+}
+
+/**
+ * Decide whether a page shows a logged-in Kairuku.
+ *
+ * Preferred: the KAIRUKU_LOGGED_IN_SELECTOR above — set it after your first
+ * login. Fallback heuristic (used while the selector is empty):
+ *   1. the URL must not look like a login/MFA/auth screen, and
+ *   2. no password field or one-time-code input may be visible.
+ * Both checks must pass. This errs on the side of "not logged in", so the
+ * login window stays open through every login + MFA screen and only closes
+ * once you land somewhere that no longer asks for credentials.
+ */
+async function isAuthenticated(page: Page): Promise<boolean> {
+	try {
+		await page
+			.waitForLoadState("domcontentloaded", { timeout: 5_000 })
+			.catch(() => {});
+
+		if (KAIRUKU_LOGGED_IN_SELECTOR) {
+			return (
+				(await page
+					.locator(KAIRUKU_LOGGED_IN_SELECTOR)
+					.first()
+					.isVisible()
+					.catch(() => false)) === true
+			);
+		}
+
+		// ── Heuristic fallback (replace with the selector when known) ──
+		const url = page.url();
+		if (!url.startsWith("http")) return false;
+		if (AUTH_URL_HINTS.test(url)) return false;
+
+		const authField = page
+			.locator(
+				'input[type="password"], input[autocomplete="one-time-code"], input[name*="otp" i], input[name*="code" i][inputmode="numeric"]',
+			)
+			.first();
+		if (await authField.isVisible().catch(() => false)) return false;
+
+		// Require a real, rendered page (not blank/error) before declaring live.
+		const hasContent = await page
+			.locator("body *")
+			.first()
+			.isVisible()
+			.catch(() => false);
+		return hasContent;
+	} catch {
+		return false;
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API — reusable by every future Kairuku tool
+// ---------------------------------------------------------------------------
+
+/**
+ * Open a real, headed Chromium window at the Kairuku login page using the
+ * persistent profile. The user logs in (including MFA) by hand; a watcher
+ * polls until the page looks authenticated, then closes the window
+ * automatically and marks the session live. Returns as soon as the window is
+ * open — watch getKairukuStatus() for progress.
+ */
+export async function openKairukuLoginWindow(): Promise<KairukuStatusReport> {
+	if (activeMode === "login") {
+		setStatus("login_window_open", "Login window is already open.");
+		return getKairukuStatus();
+	}
+	// A background session context would hold the profile lock — release it.
+	if (activeMode === "session") await closeActiveContext();
+
+	setStatus("checking", "Opening the Kairuku login window…");
+	let ctx: BrowserContext;
+	try {
+		ctx = await launchPersistent(false);
+	} catch (err) {
+		setStatus("not_connected", "Could not open the login window.");
+		throw err;
+	}
+	activeContext = ctx;
+	activeMode = "login";
+
+	const page = currentPage(ctx) ?? (await ctx.newPage());
+	await page.goto(KAIRUKU_URL, { waitUntil: "domcontentloaded" }).catch(() => {
+		// Keep the window open even if the first load hiccups — the user can
+		// retry/navigate; the watcher keeps checking whatever is on screen.
+	});
+	setStatus(
+		"login_window_open",
+		"Login window open — log in and enter your MFA code in the browser window.",
+	);
+
+	// If the user closes the window themselves, reflect that.
+	ctx.on("close", () => {
+		if (activeContext === ctx) {
+			activeContext = null;
+			activeMode = null;
+			if (status === "login_window_open" || status === "checking") {
+				setStatus(
+					"not_connected",
+					"Login window was closed before login was detected.",
+				);
+			}
+		}
+	});
+
+	// Watcher: poll until authenticated, then close the window.
+	void (async () => {
+		while (activeContext === ctx && activeMode === "login") {
+			await sleep(2_000);
+			if (activeContext !== ctx) return;
+			const p = currentPage(ctx);
+			if (!p) continue;
+			if (await isAuthenticated(p)) {
+				setStatus("checking", "Login detected — confirming…");
+				await sleep(1_500); // let any post-login redirect settle
+				const confirmPage = currentPage(ctx);
+				if (
+					activeContext === ctx &&
+					confirmPage &&
+					(await isAuthenticated(confirmPage))
+				) {
+					await closeActiveContext();
+					setStatus(
+						"live",
+						"Kairuku session is live — the login window was closed automatically.",
+					);
+					return;
+				}
+				if (activeContext === ctx) {
+					setStatus(
+						"login_window_open",
+						"Still finishing login — window stays open.",
+					);
+				}
+			}
+		}
+	})();
+
+	return getKairukuStatus();
+}
+
+/**
+ * Verify the stored session by opening the profile headlessly, loading
+ * Kairuku, and running the login check. Safe to call any time (no-op while
+ * the login window is open). Read-only: it loads the page and looks at it —
+ * nothing is clicked, submitted, or scraped.
+ */
+export async function checkKairukuSessionStatus(): Promise<KairukuStatusReport> {
+	if (activeMode === "login") return getKairukuStatus();
+
+	if (activeMode === "session" && activeContext) {
+		const p = currentPage(activeContext);
+		if (p && (await isAuthenticated(p))) {
+			setStatus("live", "Kairuku session is live (open session in use).");
+		} else {
+			await closeActiveContext();
+			setStatus("relogin_required", "The open session is no longer authenticated.");
+		}
+		return getKairukuStatus();
+	}
+
+	if (!existsSync(KAIRUKU_PROFILE_DIR)) {
+		setStatus("not_connected", "No saved Kairuku session yet — log in first.");
+		return getKairukuStatus();
+	}
+
+	setStatus("checking", "Checking the saved Kairuku session…");
+	let ctx: BrowserContext | null = null;
+	try {
+		ctx = await launchPersistent(true);
+		const page = currentPage(ctx) ?? (await ctx.newPage());
+		await page.goto(KAIRUKU_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
+		if (await isAuthenticated(page)) {
+			setStatus("live", "Kairuku session is live and ready.");
+		} else {
+			setStatus("relogin_required", "Saved session has expired — log in again.");
+		}
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : "unknown error";
+		setStatus("relogin_required", `Could not verify the session: ${msg}`);
+	} finally {
+		if (ctx) await ctx.close().catch(() => {});
+	}
+	return getKairukuStatus();
+}
+
+/**
+ * Get an authenticated Playwright page backed by the persistent profile.
+ * Opens (or reuses) a background context, verifies login, and returns
+ * { context, page }. Throws KairukuReloginRequiredError if not authenticated.
+ * The context stays open for the caller; call closeKairukuBrowser() when done.
+ */
+export async function getKairukuAuthenticatedPage(): Promise<{
+	context: BrowserContext;
+	page: Page;
+}> {
+	if (activeMode === "login") {
+		throw new Error(
+			"The Kairuku login window is open — finish logging in (or close it) first.",
+		);
+	}
+
+	if (activeMode === "session" && activeContext) {
+		const p = currentPage(activeContext) ?? (await activeContext.newPage());
+		if (await isAuthenticated(p)) {
+			setStatus("live", "Kairuku session is live (reusing open session).");
+			return { context: activeContext, page: p };
+		}
+		await closeActiveContext();
+		setStatus("relogin_required", "Session expired — log in again.");
+		throw new KairukuReloginRequiredError("session expired");
+	}
+
+	if (!existsSync(KAIRUKU_PROFILE_DIR)) {
+		setStatus("not_connected", "No saved Kairuku session yet — log in first.");
+		throw new KairukuReloginRequiredError("no saved session");
+	}
+
+	setStatus("checking", "Opening the saved Kairuku session…");
+	let ctx: BrowserContext;
+	try {
+		ctx = await launchPersistent(true);
+	} catch (err) {
+		setStatus("not_connected", "Could not open the saved session.");
+		throw err;
+	}
+	activeContext = ctx;
+	activeMode = "session";
+	ctx.on("close", () => {
+		if (activeContext === ctx) {
+			activeContext = null;
+			activeMode = null;
+		}
+	});
+
+	const page = currentPage(ctx) ?? (await ctx.newPage());
+	try {
+		await page.goto(KAIRUKU_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
+	} catch {
+		await closeActiveContext();
+		setStatus("relogin_required", "Could not reach Kairuku to verify the session.");
+		throw new KairukuReloginRequiredError("could not reach Kairuku");
+	}
+	if (!(await isAuthenticated(page))) {
+		await closeActiveContext();
+		setStatus("relogin_required", "Saved session has expired — log in again.");
+		throw new KairukuReloginRequiredError("session expired");
+	}
+	setStatus("live", "Kairuku session is live and ready.");
+	return { context: ctx, page };
+}
+
+/**
+ * The one call every future Kairuku tool should make before doing anything:
+ *
+ *   const { page } = await requireKairukuSession();
+ *
+ * Returns an authenticated { context, page } when the session is live;
+ * throws KairukuReloginRequiredError (err.code === "RELOGIN_REQUIRED") when
+ * it isn't — catch it and send the user to the Kairuku Session tab.
+ */
+export async function requireKairukuSession(): Promise<{
+	context: BrowserContext;
+	page: Page;
+}> {
+	return getKairukuAuthenticatedPage();
+}
+
+/**
+ * Close whatever Kairuku browser is open (the login window or a background
+ * session context). The saved profile on disk is untouched, so a live
+ * session stays live.
+ */
+export async function closeKairukuBrowser(): Promise<KairukuStatusReport> {
+	const wasLogin = activeMode === "login";
+	const hadContext = activeContext !== null;
+	await closeActiveContext();
+	if (wasLogin) {
+		setStatus("not_connected", "Login window closed manually.");
+	} else if (hadContext && status === "live") {
+		setStatus("live", "Session browser closed — saved session is still live.");
+	}
+	return getKairukuStatus();
+}

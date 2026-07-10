@@ -54,6 +54,7 @@
 		"check": "wrangler types && tsc && wrangler deploy --dry-run",
 		"deploy": "npm run build && wrangler deploy",
 		"dev": "vite",
+		"kairuku:session": "node --experimental-strip-types scripts/kairuku/kairuku-session-server.ts",
 		"lint": "eslint .",
 		"preview": "npm run build && vite preview",
 		"test": "vitest run"

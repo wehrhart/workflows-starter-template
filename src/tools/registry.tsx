@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { KairukuSession } from "./KairukuSession";
 import { KaiserBilling } from "./KaiserBilling";
 import { PriceQuote } from "./PriceQuote";
 
@@ -34,6 +35,14 @@ export const TOOLS: ToolDef[] = [
 		icon: "📄",
 		status: "active",
 		component: PriceQuote,
+	},
+	{
+		id: "kairuku-session",
+		name: "Kairuku Session",
+		tagline: "Log in to Kairuku once — future tools reuse the session",
+		icon: "🔐",
+		status: "active",
+		component: KairukuSession,
 	},
 	{
 		id: "coming-soon",
