@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Abyrx Tools</title>
 <style>
   :root {
@@ -299,6 +300,8 @@
       tagline: "Bill sheet PDFs → ready-to-upload Bill-Only spreadsheet", active: true },
     { id: "price-quote", name: "Price Quote Generator", icon: "📄",
       tagline: "Hospital + prices → a PDF quote in the ABYRX template", active: true },
+    { id: "kairuku-session", name: "Kairuku Session", icon: "🔐",
+      tagline: "Log in to Kairuku once — future tools reuse the session", active: true },
     { id: "coming-soon", name: "Next tool", icon: "➕",
       tagline: "Another workflow can live here", active: false }
   ];
@@ -619,6 +622,92 @@
     }, 900);
   }
 
+  // ---- Kairuku Session tool ----
+  // Talks to the local Kairuku session service (`npm run kairuku:session`,
+  // loopback only). Playwright must open a real browser window on your
+  // computer, which a hosted page can't do by itself — so when the service
+  // isn't reachable (e.g. viewing this page on claude.ai), the panel shows
+  // setup instructions instead of live controls. Responses are status
+  // strings only; no cookies, tokens, or credentials ever reach this page.
+  var KK_SERVICE = "http://127.0.0.1:5281";
+  var kkStatus = "offline";  // offline | not_connected | login_window_open | checking | live | relogin_required
+  var kkDetail = "";
+  var kkBusy = false;
+  var kkTimer = null;
+  var KK_META = {
+    offline: { label: "Session service not running", cls: "neutral" },
+    not_connected: { label: "Kairuku: Not connected", cls: "err" },
+    login_window_open: { label: "Kairuku: Login window open", cls: "warn" },
+    checking: { label: "Kairuku: Checking session…", cls: "warn" },
+    live: { label: "Kairuku: Live / Ready", cls: "ok" },
+    relogin_required: { label: "Kairuku: Re-login required", cls: "warn" }
+  };
+
+  function renderKairuku() {
+    return '<div class="wrap">' +
+      '<div style="margin-bottom:20px"><h1 class="page">Kairuku Session</h1>' +
+      '<p class="sub">Log in to Kairuku once; future Kairuku tools reuse the session. Your password and MFA code are typed by you, in a real browser window — nothing is captured or stored.</p></div>' +
+      '<div class="card" style="margin-bottom:20px">' +
+      '<div class="chips" style="margin-bottom:8px"><span class="chip neutral" id="kk_pill">Checking for the session service…</span></div>' +
+      '<div class="meta" id="kk_detail"></div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px">' +
+      '<button class="btn" id="kk_open" disabled>Open Kairuku Login Window</button>' +
+      '<button class="btn ghost" id="kk_check" disabled>Check Session Status</button>' +
+      '<button class="btn ghost" id="kk_close" disabled>Close Login Window</button>' +
+      '</div>' +
+      '<div id="kk_setup" style="display:none;margin-top:16px">' +
+      '<div class="meta">The Kairuku login window is opened by a small companion service on <b>your computer</b> — a web page can’t launch a browser window by itself. From the Abyrx tools repo folder, run:</div>' +
+      '<pre style="margin-top:8px;padding:12px;border-radius:8px;background:var(--chip);overflow-x:auto;font-size:12px;line-height:1.6">' +
+      'git checkout feature/kairuku-session-manager\n' +
+      'npm install\n' +
+      'npx playwright install chromium   # first time only\n' +
+      'npm run kairuku:session           # terminal 1 — the login service\n' +
+      'npm run dev                       # terminal 2 — the app at http://localhost:5280</pre>' +
+      '<div class="meta" style="margin-top:8px">Then use the <b>Kairuku Session</b> tab in the local app (http://localhost:5280). If you open this page on the same computer while the service is running, the buttons above work here too.</div>' +
+      '</div></div>' +
+      '<p class="note">Click <b>Open Kairuku Login Window</b> → a real Chromium window opens at https://beta.kairuku.com/ → log in and enter the MFA code from your text → the window closes by itself and the status turns green: <b>Live / Ready</b>. The session lives only in a local browser profile on your computer and survives restarts — use <b>Check Session Status</b> to confirm.</p>' +
+      '</div>';
+  }
+
+  function kkUpdateUi() {
+    var pill = document.getElementById("kk_pill");
+    if (!pill) return; // not on the Kairuku tab
+    var meta = KK_META[kkStatus] || KK_META.offline;
+    pill.className = "chip " + meta.cls;
+    pill.textContent = meta.label;
+    document.getElementById("kk_detail").textContent = kkDetail || "";
+    var offline = kkStatus === "offline";
+    var winOpen = kkStatus === "login_window_open";
+    document.getElementById("kk_open").disabled = offline || kkBusy || winOpen;
+    document.getElementById("kk_check").disabled = offline || kkBusy || winOpen;
+    document.getElementById("kk_close").disabled = offline || kkBusy || !winOpen;
+    document.getElementById("kk_setup").style.display = offline ? "" : "none";
+  }
+
+  function kkApply(body) {
+    kkStatus = body && body.status ? body.status : "offline";
+    kkDetail = body ? (body.error || body.detail || "") : "";
+    kkUpdateUi();
+  }
+
+  function kkRefresh() {
+    if (kkBusy) return;
+    fetch(KK_SERVICE + "/api/kairuku/status")
+      .then(function (r) { return r.json(); })
+      .then(kkApply)
+      .catch(function () { kkApply(null); });
+  }
+
+  function kkAction(path) {
+    if (kkBusy) return;
+    kkBusy = true;
+    kkUpdateUi();
+    fetch(KK_SERVICE + path, { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function (body) { kkBusy = false; kkApply(body); })
+      .catch(function () { kkBusy = false; kkApply(null); });
+  }
+
   function render() {
     var r = route();
     renderNav();
@@ -626,6 +715,7 @@
     var view = document.getElementById("view");
     if (r === "kaiser-billing") view.innerHTML = renderKaiser();
     else if (r === "price-quote") view.innerHTML = renderQuote();
+    else if (r === "kairuku-session") view.innerHTML = renderKairuku();
     else view.innerHTML = renderHome();
     wire(r);
   }
@@ -715,6 +805,15 @@
           render();
         };
       });
+    }
+    // Poll the local session service only while the Kairuku tab is showing.
+    if (kkTimer) { clearInterval(kkTimer); kkTimer = null; }
+    if (r === "kairuku-session") {
+      document.getElementById("kk_open").onclick = function () { kkAction("/api/kairuku/open-login"); };
+      document.getElementById("kk_check").onclick = function () { kkAction("/api/kairuku/check"); };
+      document.getElementById("kk_close").onclick = function () { kkAction("/api/kairuku/close"); };
+      kkRefresh();
+      kkTimer = setInterval(kkRefresh, 2500);
     }
     if (r === "price-quote") {
       var go = document.getElementById("q_go");
