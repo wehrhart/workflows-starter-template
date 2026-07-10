@@ -160,7 +160,7 @@ export function PriceInformation() {
 
 						<div className="mt-3 flex flex-wrap gap-2">
 							<Chip tone="ok">
-								{result.approved.length} approved here
+								{result.approved.length} Use Here
 							</Chip>
 							{result.systemExtras.length > 0 && (
 								<Chip tone="warn">+{result.systemExtras.length} from sister facilities</Chip>
