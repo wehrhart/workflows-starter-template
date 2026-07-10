@@ -12,6 +12,17 @@
 set -e
 cd "$(dirname "$0")"
 
+if ! command -v npm >/dev/null 2>&1; then
+	echo ""
+	echo "Node.js isn't installed yet (it powers these tools)."
+	echo "1. Go to https://nodejs.org and click the big green LTS download button."
+	echo "2. Open the downloaded installer and click through it (all defaults are fine)."
+	echo "3. Double-click 'Start Abyrx Tools' again."
+	echo ""
+	read -n 1 -s -r -p "Press any key to close this window…"
+	exit 1
+fi
+
 if [ ! -d node_modules ]; then
 	echo "First-time setup: installing packages (a few minutes)…"
 	npm install

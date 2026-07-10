@@ -173,13 +173,12 @@ export function KairukuSession() {
 
 				{offline ? (
 					<div className="mt-4 rounded-lg bg-neutral-50 p-4 text-sm text-neutral-600 dark:bg-neutral-800/60 dark:text-neutral-300">
-						The Kairuku session service isn't running. Playwright needs a real
-						local process to open a browser window, so start it in a terminal
-						next to <code className="font-mono">npm run dev</code>:
-						<pre className="mt-2 rounded bg-neutral-900 px-3 py-2 font-mono text-xs text-neutral-100 dark:bg-neutral-950">
-							npm run kairuku:session
-						</pre>
-						This tab will connect automatically once it's up.
+						The Kairuku session service isn't running. The easy fix: close
+						this app and double-click <strong>Start Abyrx Tools</strong> in
+						the tools folder — it starts the app and the service together.
+						(Terminal alternative:{" "}
+						<code className="font-mono">npm run kairuku:session</code>.) This
+						tab connects automatically once it's up.
 					</div>
 				) : (
 					<div className="mt-5 flex flex-wrap gap-3">

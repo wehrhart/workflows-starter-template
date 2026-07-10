@@ -745,14 +745,13 @@
       '<button class="btn ghost" id="kk_close" disabled>Close Login Window</button>' +
       '</div>' +
       '<div id="kk_setup" style="display:none;margin-top:16px">' +
-      '<div class="meta">The Kairuku login window is opened by a small companion service on <b>your computer</b> — a web page can’t launch a browser window by itself. From the Abyrx tools repo folder, run:</div>' +
-      '<pre style="margin-top:8px;padding:12px;border-radius:8px;background:var(--chip);overflow-x:auto;font-size:12px;line-height:1.6">' +
-      'git checkout feature/kairuku-session-manager\n' +
-      'npm install\n' +
-      'npx playwright install chromium   # first time only\n' +
-      'npm run kairuku:session           # terminal 1 — the login service\n' +
-      'npm run dev                       # terminal 2 — the app at http://localhost:5280</pre>' +
-      '<div class="meta" style="margin-top:8px">Then use the <b>Kairuku Session</b> tab in the local app (http://localhost:5280). If you open this page on the same computer while the service is running, the buttons above work here too.</div>' +
+      '<div class="meta">The Kairuku login window is opened by a companion app on <b>your computer</b> — a hosted web page can’t launch a browser window by itself. One-time setup, no terminal typing:</div>' +
+      '<ol class="meta" style="margin:8px 0 0;padding-left:20px;line-height:1.9">' +
+      '<li>Install Node.js: at <a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a>, click the big green <b>LTS</b> button and run the installer (all defaults).</li>' +
+      '<li><a href="https://github.com/wehrhart/workflows-starter-template/archive/refs/heads/feature/kairuku-session-manager.zip" target="_blank" rel="noopener"><b>Download the Abyrx tools folder (ZIP)</b></a>, double-click the ZIP to unpack it, and keep the folder somewhere handy (e.g. Documents).</li>' +
+      '<li>Open the folder and double-click <b>Start Abyrx Tools</b> (Mac: right-click → Open, just the first time). First start installs everything (a few minutes), then your browser opens the tools.</li>' +
+      '</ol>' +
+      '<div class="meta" style="margin-top:8px">From then on it’s just that one double-click. Use the <b>Kairuku Session</b> tab in the app it opens (http://localhost:5280) to log in.</div>' +
       '</div></div>' +
       '<p class="note">Click <b>Open Kairuku Login Window</b> → a real Chromium window opens at https://beta.kairuku.com/ → log in and enter the MFA code from your text → the window closes by itself and the status turns green: <b>Live / Ready</b>. The session lives only in a local browser profile on your computer and survives restarts — use <b>Check Session Status</b> to confirm.</p>' +
       '</div>';

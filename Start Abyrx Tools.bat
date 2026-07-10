@@ -11,6 +11,18 @@ rem Chromium browser the Kairuku login window uses. After that, starts are fast.
 rem ───────────────────────────────────────────────────────────────────────────
 cd /d "%~dp0"
 
+where npm >nul 2>nul
+if errorlevel 1 (
+	echo.
+	echo Node.js isn't installed yet ^(it powers these tools^).
+	echo 1. Go to https://nodejs.org and click the big green LTS download button.
+	echo 2. Run the downloaded installer ^(all defaults are fine^).
+	echo 3. Double-click "Start Abyrx Tools" again.
+	echo.
+	pause
+	exit /b 1
+)
+
 if not exist node_modules (
 	echo First-time setup: installing packages, this can take a few minutes...
 	call npm install
