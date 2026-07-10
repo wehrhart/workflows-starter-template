@@ -59,6 +59,7 @@ export function lookupPrice(input: string, data: PriceDataset = PRICE_DATA): Pri
 				city: s.city,
 				state: s.state,
 				approvedCount: s.approved.length,
+				approved: s.approved,
 			});
 		}
 	}

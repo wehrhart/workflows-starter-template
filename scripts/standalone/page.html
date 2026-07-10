@@ -510,8 +510,16 @@
     var sisters = "";
     if (res.sisters.length) {
       var items = res.sisters.map(function (s) {
-        return '<li>#' + esc(s.code) + ' · ' + esc(s.name) + ' — ' + esc(s.city) + ', ' + esc(s.state) +
-          (s.approvedCount > 0 ? ' · ' + s.approvedCount + ' approved' : '') + '</li>';
+        var head = '#' + esc(s.code) + ' · ' + esc(s.name) + ' — ' + esc(s.city) + ', ' + esc(s.state);
+        if (s.approved && s.approved.length) {
+          var prods = s.approved.map(function (p) {
+            return '<li>' + esc(p.product) + ' — ' + esc(p.price) + '</li>';
+          }).join("");
+          return '<li style="margin:2px 0"><details><summary style="cursor:pointer">' + head +
+            ' · ' + s.approved.length + ' approved</summary>' +
+            '<ul style="margin:4px 0 6px 18px;list-style:disc">' + prods + '</ul></details></li>';
+        }
+        return '<li style="margin:2px 0;list-style:none">' + head + '</li>';
       }).join("");
       sisters = '<details style="margin-top:16px"><summary style="cursor:pointer;color:var(--muted);font-size:14px">' +
         'Sister facilities checked (' + res.sisters.length + ') — verify these are the right system</summary>' +
