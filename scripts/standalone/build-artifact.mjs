@@ -97,7 +97,7 @@ const PRICE_FUNCTIONS = `  function priceRows(res) {
     var f = res.facility;
     var sub = esc(f.city) + ", " + esc(f.state) +
       (res.systemName ? " \\u00b7 " + esc(res.systemName) : " \\u00b7 no health system matched");
-    var chips = '<span class="chip ok">' + res.approved.length + ' approved here</span>';
+    var chips = '<span class="chip ok">' + res.approved.length + ' Use Here</span>';
     if (res.systemExtras.length) chips += '<span class="chip warn">+' + res.systemExtras.length + ' from sister facilities</span>';
     if (res.sisters.length) chips += '<span class="chip neutral">' + res.sisters.length + ' sister facilities</span>';
 
