@@ -25,6 +25,7 @@
  */
 
 import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 import type { BrowserContext, Page } from "playwright";
@@ -38,10 +39,13 @@ export const KAIRUKU_URL = process.env.KAIRUKU_URL ?? "https://beta.kairuku.com/
 
 /**
  * Where the persistent browser profile lives (cookies, local storage — the
- * browser's own encrypted-at-rest state). Gitignored; never commit it.
+ * browser's own encrypted-at-rest state). Kept in the user's HOME directory,
+ * not the tools folder, so replacing the folder with a fresh download never
+ * logs Kairuku out. Never committed anywhere.
  */
 export const KAIRUKU_PROFILE_DIR = path.resolve(
-	process.env.KAIRUKU_PROFILE_DIR ?? ".kairuku-browser-profile",
+	process.env.KAIRUKU_PROFILE_DIR ??
+		path.join(os.homedir(), ".abyrx-kairuku", "browser-profile"),
 );
 
 /**

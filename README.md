@@ -28,7 +28,7 @@ Kairuku workflows. It opens a real Chromium window (Playwright, persistent
 profile) at <https://beta.kairuku.com/>, you log in and enter your MFA code by
 hand, and once login is detected the window closes itself and the tab shows
 **Kairuku: Live / Ready**. The session lives in the gitignored
-`.kairuku-browser-profile/` folder, so it survives app restarts. See
+`~/.abyrx-kairuku/` folder in your home directory, so it survives app restarts and folder updates. See
 "Kairuku session service" below for how to run it and how future tools reuse
 the session.
 
@@ -83,10 +83,10 @@ permatage + hemasorb + hemasorb apply summed) and/or a Montage Flowable entry
 (qty/Units = cartridge count) through UID Tracking → Demo Units, fills notes,
 units, tracking, checks fulfilled, and saves. "Request Overage" is never
 clicked — those reps (and reps not found in Kairuku, "NOT IN k.") accumulate
-on the **Overage reps** sheet (`.kairuku-data/`, gitignored), downloadable as
+on the **Overage reps** sheet (`~/.abyrx-kairuku/data/`), downloadable as
 Excel from the tab. All Kairuku-specific selectors live in the `SEL` block at
 the top of the runner — if a run stops, the failure screenshot in
-`.kairuku-data/debug/` shows which one to adjust.
+`~/.abyrx-kairuku/data/debug/` shows which one to adjust.
 
 ## Kairuku session service
 
@@ -105,7 +105,7 @@ by itself and the tab turns green. **Check Session Status** re-verifies the
 saved session headlessly, e.g. after restarting the app.
 
 - The session is stored only as a normal Chromium profile in
-  `.kairuku-browser-profile/` (gitignored). No usernames, passwords, MFA
+  `~/.abyrx-kairuku/` in your home directory. No usernames, passwords, MFA
   codes, cookies, or tokens are ever written to the repo or the logs.
 - Login detection defaults to a conservative heuristic (window stays open
   while any login/MFA form is showing). After your first login, set

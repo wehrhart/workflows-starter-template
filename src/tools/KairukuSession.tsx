@@ -225,10 +225,11 @@ export function KairukuSession() {
 						turns green: <em>Live / Ready</em>.
 					</li>
 					<li>
-						The session lives in a local, gitignored browser profile
-						(<span className="font-mono text-xs">.kairuku-browser-profile/</span>),
-						so it usually survives restarting the app — use{" "}
-						<strong>Check Session Status</strong> to confirm.
+						The session lives in a private browser profile in your home folder
+						(<span className="font-mono text-xs">~/.abyrx-kairuku/</span>), so it
+						survives restarting the app — and even replacing the tools folder
+						with a fresh download. Use <strong>Check Session Status</strong> to
+						confirm.
 					</li>
 					<li>
 						Future Kairuku tools call{" "}

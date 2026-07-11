@@ -9,11 +9,18 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { zipSync, strToU8 } from "fflate";
 
+/**
+ * Tool data (overage sheet, OCR cache, run screenshots) lives in the user's
+ * HOME directory, not the tools folder, so replacing the folder with a fresh
+ * download never loses the running Overage reps sheet.
+ */
 export const KAIRUKU_DATA_DIR = path.resolve(
-	process.env.KAIRUKU_DATA_DIR ?? ".kairuku-data",
+	process.env.KAIRUKU_DATA_DIR ??
+		path.join(os.homedir(), ".abyrx-kairuku", "data"),
 );
 const OVERAGE_FILE = path.join(KAIRUKU_DATA_DIR, "overage-reps.json");
 
