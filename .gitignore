@@ -39,3 +39,8 @@ scripts/*.xlsx
 # Generated standalone-page build outputs (rebuild with scripts/standalone/build.mjs)
 scripts/standalone/bundle.js
 scripts/standalone/abyrx-tools.html
+
+# Confidential KAIRUKU pricing snapshot — keep OUT of git (regenerate via scrape).
+# Lives only in the private artifact + local working copy.
+worker/lib/price-data.ts
+scripts/price-systems.json

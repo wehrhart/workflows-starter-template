@@ -49,6 +49,15 @@ const NEW_SISTERS =
 
 replaceOnce(OLD_SISTERS, NEW_SISTERS, "sisters render block");
 
+// Restore the "Use Here" chip label if a claude.ai rebuild reverted it.
+if (content.includes("res.approved.length + ' approved here</span>'")) {
+	replaceOnce(
+		"res.approved.length + ' approved here</span>'",
+		"res.approved.length + ' Use Here</span>'",
+		"Use Here chip",
+	);
+}
+
 // Sanity: nothing dropped.
 for (const m of ["kaiser-billing", "price-quote", "price-information", "AbyrxKaiser", "AbyrxQuote", "AbyrxPrice", "Use Here"]) {
 	if (!content.includes(m)) throw new Error(`post-patch sanity failed: missing ${m}`);
