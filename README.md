@@ -70,6 +70,24 @@ a tappable link. To surface a new tool there too:
    `bundle.js` and `abyrx-tools.html` are generated (gitignored); rebuild them
    from source whenever a tool changes.
 
+## Demo Units
+
+The fifth tool, **Demo Units**, enters demo shipments into Kairuku using the
+live session from the Kairuku Session tab. Upload a photo of the shipping
+sheet → local OCR (tesseract.js, nothing leaves the machine) pre-fills the
+12-digit tracking number, the rep's name, and the handwritten top-right
+M/C/G/T/H/HA/P quantities → fix anything it misread → Submit. The automation
+(`scripts/kairuku/demoUnitsRunner.ts`) finds the rep's distributor via
+Distributors → Professionals, then enters a MONTAGE entry (montage +
+permatage + hemasorb + hemasorb apply summed) and/or a Montage Flowable entry
+(qty/Units = cartridge count) through UID Tracking → Demo Units, fills notes,
+units, tracking, checks fulfilled, and saves. "Request Overage" is never
+clicked — those reps (and reps not found in Kairuku, "NOT IN k.") accumulate
+on the **Overage reps** sheet (`.kairuku-data/`, gitignored), downloadable as
+Excel from the tab. All Kairuku-specific selectors live in the `SEL` block at
+the top of the runner — if a run stops, the failure screenshot in
+`.kairuku-data/debug/` shows which one to adjust.
+
 ## Kairuku session service
 
 A browser page (and the Cloudflare worker) can't launch a desktop browser, so

@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { DemoUnits } from "./DemoUnits";
 import { KairukuSession } from "./KairukuSession";
 import { KaiserBilling } from "./KaiserBilling";
 import { PriceInformation } from "./PriceInformation";
@@ -52,6 +53,14 @@ export const TOOLS: ToolDef[] = [
 		icon: "🔐",
 		status: "active",
 		component: KairukuSession,
+	},
+	{
+		id: "demo-units",
+		name: "Demo Units",
+		tagline: "Shipping sheet photo → demo unit entries in Kairuku",
+		icon: "📦",
+		status: "active",
+		component: DemoUnits,
 	},
 	{
 		id: "coming-soon",

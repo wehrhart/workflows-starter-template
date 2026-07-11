@@ -305,6 +305,8 @@
       tagline: "Facility code → approved products & prices, across the health system", active: true },
     { id: "kairuku-session", name: "Kairuku Session", icon: "🔐",
       tagline: "Log in to Kairuku once — future tools reuse the session", active: true },
+    { id: "demo-units", name: "Demo Units", icon: "📦",
+      tagline: "Shipping sheet photo → demo unit entries in Kairuku", active: true },
     { id: "coming-soon", name: "Next tool", icon: "➕",
       tagline: "Another workflow can live here", active: false }
   ];
@@ -796,6 +798,44 @@
       .catch(function () { kkBusy = false; kkApply(null); });
   }
 
+  // ---- Demo Units (runs in the local app; this page is the signpost) ----
+  function renderDemoUnits() {
+    return '<div class="wrap">' +
+      '<div style="margin-bottom:20px"><h1 class="page">Demo Units</h1>' +
+      '<p class="sub">Photo of the shipping sheet → the tool finds the rep’s distributor in Kairuku, enters the demo (MONTAGE and/or Montage Flowable), logs overages, and marks the order fulfilled.</p></div>' +
+      '<div class="card">' +
+      '<div class="meta" id="du_state">Checking for the local app…</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px">' +
+      '<a class="btn" id="du_open" href="http://localhost:5280/#/demo-units" style="display:none;text-decoration:none">Open Demo Units in the local app</a>' +
+      '<a class="btn ghost" id="du_sheet" href="http://127.0.0.1:5281/api/kairuku/overage.xlsx" style="display:none;text-decoration:none">Download “Overage reps” Excel</a>' +
+      '</div>' +
+      '<div class="meta" id="du_help" style="display:none;margin-top:16px">Demo Units drives a real browser through Kairuku, so it runs in the local Abyrx app — double-click <b>Start Abyrx Tools</b> in your tools folder (see the Kairuku Session tab for the one-time setup), and it opens with this tool ready.</div>' +
+      '</div>' +
+      '<p class="note">Uses the live login from the <b>Kairuku Session</b> tab — get that green first. Upload the sheet photo, fix anything the reader misread (tracking number, rep name, the top-right M/C/G/T/H/HA/P counts), press Submit, and watch it enter step by step. Reps that hit “Request Overage” (or aren’t in Kairuku) accumulate on the Overage reps sheet.</p>' +
+      '</div>';
+  }
+
+  function duRefresh() {
+    fetch(KK_SERVICE + "/api/kairuku/status")
+      .then(function (r) { return r.json(); })
+      .then(function () {
+        var st = document.getElementById("du_state");
+        if (!st) return;
+        st.textContent = "Local app detected — Demo Units is ready there.";
+        document.getElementById("du_open").style.display = "";
+        document.getElementById("du_sheet").style.display = "";
+        document.getElementById("du_help").style.display = "none";
+      })
+      .catch(function () {
+        var st = document.getElementById("du_state");
+        if (!st) return;
+        st.textContent = "The local app isn’t running.";
+        document.getElementById("du_open").style.display = "none";
+        document.getElementById("du_sheet").style.display = "none";
+        document.getElementById("du_help").style.display = "";
+      });
+  }
+
   function render() {
     var r = route();
     renderNav();
@@ -805,6 +845,7 @@
     else if (r === "price-quote") view.innerHTML = renderQuote();
     else if (r === "price-information") view.innerHTML = renderPrice();
     else if (r === "kairuku-session") view.innerHTML = renderKairuku();
+    else if (r === "demo-units") view.innerHTML = renderDemoUnits();
     else view.innerHTML = renderHome();
     wire(r);
   }
@@ -923,8 +964,12 @@
         };
       });
     }
-    // Poll the local session service only while the Kairuku tab is showing.
+    // Poll the local session service only while a Kairuku-backed tab shows.
     if (kkTimer) { clearInterval(kkTimer); kkTimer = null; }
+    if (r === "demo-units") {
+      duRefresh();
+      kkTimer = setInterval(duRefresh, 3000);
+    }
     if (r === "kairuku-session") {
       document.getElementById("kk_open").onclick = function () { kkAction("/api/kairuku/open-login"); };
       document.getElementById("kk_check").onclick = function () { kkAction("/api/kairuku/check"); };

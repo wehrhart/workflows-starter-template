@@ -34,6 +34,8 @@ worker-configuration.d.ts
 
 # Kairuku local browser session — holds the logged-in cookies. NEVER commit.
 .kairuku-browser-profile/
+# Kairuku tool data: overage sheet, OCR cache, debug screenshots
+.kairuku-data/
 # Kairuku debug output (screenshots / traces), if any are ever taken
 kairuku-*.png
 kairuku-*.zip
