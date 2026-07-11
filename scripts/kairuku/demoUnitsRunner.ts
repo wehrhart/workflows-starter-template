@@ -104,15 +104,40 @@ export interface DemoUnitsRun {
 	finishedAt?: string;
 	/** Failure screenshot path, when a step failed. */
 	screenshot?: string;
+	/** Folder holding a screenshot of every completed step of this run. */
+	debugDir?: string;
 }
 
 let currentRun: DemoUnitsRun | null = null;
+let runPage: Page | null = null;
+let snapCount = 0;
 
 export function getDemoUnitsRun(): DemoUnitsRun | null {
 	return currentRun;
 }
 
+/**
+ * Photograph the page after every step (best-effort) so a first run can be
+ * reviewed screen by screen — if Kairuku's real pages differ from the spec,
+ * the shots show exactly where and how.
+ */
+async function snap(label: string) {
+	if (!runPage || !currentRun?.debugDir) return;
+	try {
+		snapCount += 1;
+		const file = `${String(snapCount).padStart(2, "0")}-${label
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.slice(0, 60)}.png`;
+		await runPage.screenshot({ path: path.join(currentRun.debugDir, file), fullPage: true });
+	} catch {
+		// screenshots never break a run
+	}
+}
+
 function step(label: string): RunStep {
+	// Photograph how the previous step left the page before starting the next.
+	void snap(currentRun?.steps.at(-1)?.label ?? "start");
 	const s: RunStep = { label, status: "running" };
 	currentRun?.steps.push(s);
 	console.log(`[demo-units] ${label}`);
@@ -277,11 +302,20 @@ export async function startDemoUnitsRun(input: DemoUnitsInput): Promise<DemoUnit
 	if (currentRun?.state === "running") {
 		throw new Error("A Demo Units run is already in progress.");
 	}
+	const debugDir = path.join(DEBUG_DIR, `run-${Date.now()}`);
+	try {
+		mkdirSync(debugDir, { recursive: true });
+	} catch {
+		// runs fine without step screenshots
+	}
+	snapCount = 0;
+	runPage = null;
 	currentRun = {
 		state: "running",
 		input,
 		steps: [],
 		startedAt: new Date().toISOString(),
+		debugDir,
 	};
 	// Fire and forget; the UI polls getDemoUnitsRun().
 	void run(input).catch(() => {});
@@ -290,6 +324,8 @@ export async function startDemoUnitsRun(input: DemoUnitsInput): Promise<DemoUnit
 
 async function finish(outcome: string, state: "completed" | "failed" = "completed") {
 	if (!currentRun) return;
+	await snap("finish");
+	runPage = null;
 	currentRun.state = state;
 	currentRun.outcome = outcome;
 	currentRun.finishedAt = new Date().toISOString();
@@ -305,6 +341,7 @@ async function run(input: DemoUnitsInput) {
 	let s = step("Check Kairuku session");
 	try {
 		({ page } = await requireKairukuSession());
+		runPage = page;
 		s.status = "done";
 	} catch (err) {
 		s.status = "failed";

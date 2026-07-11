@@ -53,6 +53,7 @@ interface Run {
 	steps?: RunStep[];
 	outcome?: string;
 	screenshot?: string;
+	debugDir?: string;
 }
 
 interface OverageRow {
@@ -408,6 +409,13 @@ export function DemoUnits() {
 										A screenshot of where it stopped was saved to{" "}
 										<span className="font-mono">{run.screenshot}</span> — send it
 										to Claude to get the step fixed.
+									</div>
+								)}
+								{run.debugDir && (
+									<div className="mt-2 text-xs opacity-80">
+										Every step of this run was photographed to{" "}
+										<span className="font-mono">{run.debugDir}</span> — send those
+										images to Claude to review the run screen by screen.
 									</div>
 								)}
 							</div>
