@@ -38,39 +38,37 @@ import { addOverageRow, KAIRUKU_DATA_DIR } from "./overageSheet.ts";
 
 const DEBUG_DIR = path.join(KAIRUKU_DATA_DIR, "debug");
 
+/**
+ * Real Kairuku selectors — confirmed by inspecting the live authenticated
+ * site (ASP.NET WebForms). The Demo Units entry is the "Demo Check" widget on
+ * chargesheets.aspx (reached via the UID Tracking nav). Its distributor
+ * dropdown lists only the ~24 demo-eligible distributors; the sales-rep
+ * dropdown repopulates (AJAX) after a distributor is chosen.
+ */
 const SEL = {
-	/** Top-nav links (matched by their visible text). */
-	navDistributors: "Distributors",
-	navDashboard: "Dashboard",
+	/** The page that hosts the Demo Check widget. */
+	demoPagePath: "chargesheets.aspx",
 	navUidTracking: "UID Tracking",
-	navDemoUnits: "Demo Units",
-	navProfessionals: "Professionals",
-	/**
-	 * Real Kairuku (ASP.NET WebForms) uses cascading dropdowns, NOT a search
-	 * box. Confirmed live: a distributor <select id="DistributorID"> and a
-	 * sales-rep <select id="SalesRepID"> that repopulates after the distributor
-	 * postback. Product/qty selectors are still label-based until confirmed.
-	 */
-	distributorSelect: "#DistributorID",
-	salesRepSelect: "#SalesRepID",
-	/** Demo Units form fields, found by their label text (regex) as a fallback. */
-	labelDistributor: /distributor/i,
-	labelSalesRep: /sales\s*rep/i,
-	labelProduct: /product/i,
-	labelDemoUnitsRequested: /demo\s*units\s*requested/i,
-	/** Buttons on the Demo Units flow. */
+	navDashboard: "Dashboard",
+	/** Demo Check controls (real IDs). */
+	distributorSelect: "#DistributorID_DemoCheck",
+	salesRepSelect: "#SalesRepID_DemoCheck",
+	productSelect: "#Item_DemoCheck",
+	qtyInput: "#DemoUnitsReequested_DemoCheck", // yes, Kairuku spells it "Reequested"
+	btnVerifyId: "#Button_DemoCheck_Submit",
+	/** Post-verify controls (text-matched; appear after clicking Verify). */
 	btnVerify: "Verify Demo Unit Request",
 	btnOverage: "Request Overage",
 	btnContinue: "Continue to Add",
 	btnSave: "Save",
-	/** Final page fields. */
+	/** Final page fields (label-matched until confirmed). */
 	labelNotes: /note/i,
 	labelUnits: /^units/i,
 	labelTracking: /tracking/i,
 	labelFulfilled: /fulfilled/i,
-	/** Product option text in the product dropdown. */
-	productMontage: /^montage(?!.*flow)/i,
-	productFlowable: /flowable/i,
+	/** Product option text — exact "MONTAGE" (not "MONTAGE Fast Set") vs Flowable. */
+	productMontage: /^montage$/i,
+	productFlowable: /montage\s*flowable/i,
 };
 
 // ---------------------------------------------------------------------------
@@ -258,9 +256,11 @@ async function findDistributorForRep(
 ): Promise<{ distributor: string; repLabel: string } | null> {
 	const distSelect = page.locator(SEL.distributorSelect).first();
 	await distSelect.waitFor({ state: "visible", timeout: 15_000 });
-	const dists = (await optionLabels(distSelect)).filter(
-		(d) => !/^(--|\s*select|all\b|choose|none|\s*)$/i.test(d),
-	);
+	// Skip the placeholder ("- Select a Distributor -") but NOT real names that
+	// merely contain "select" (e.g. "Smith + Nephew (Select Medical Solutions)").
+	const isPlaceholder = (d: string) =>
+		d === "" || /^\s*-+\s*$/.test(d) || /^\s*-?\s*(select|choose|please)/i.test(d);
+	const dists = (await optionLabels(distSelect)).filter((d) => !isPlaceholder(d));
 	onProgress(`checking ${dists.length} distributors…`);
 	for (let i = 0; i < dists.length; i++) {
 		const d = dists[i];
@@ -301,7 +301,6 @@ async function labeledControl(page: Page, label: RegExp, kinds: string): Promise
 	throw new Error(`Couldn't find a field labeled ${label}`);
 }
 
-const SELECT_KINDS = "self::select";
 const INPUT_KINDS = "self::input or self::textarea";
 
 /**
@@ -344,6 +343,12 @@ async function goHome(page: Page) {
 		await page.goto(KAIRUKU_URL, { waitUntil: "domcontentloaded" });
 	});
 	await settle(page);
+}
+
+/** Navigate straight to the Demo Check page (chargesheets.aspx). */
+async function gotoDemoPage(page: Page) {
+	const url = new URL(SEL.demoPagePath, KAIRUKU_URL).toString();
+	await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -464,25 +469,32 @@ async function run(input: DemoUnitsInput) {
 			return;
 		}
 
-		// ── Part 1: find the rep's distributor via the real dropdowns ─────────
-		s = step(`Find distributor for ${lastFirst}`);
-		await goHome(page);
-		await clickText(page, SEL.navDistributors).catch(() => {});
+		// ── Open the Demo Check page (UID Tracking → chargesheets.aspx) ───────
+		s = step("Open UID Tracking (Demo Units)");
+		await gotoDemoPage(page);
 		await settle(page);
+		if ((await page.locator(SEL.distributorSelect).count()) === 0) {
+			throw new Error(
+				"Couldn't find the Demo Check distributor dropdown on the UID Tracking page.",
+			);
+		}
+		s.status = "done";
+
+		// ── Part 1: find the rep's distributor by walking the ~24 demo-eligible
+		// distributors and checking each one's sales-rep dropdown. If the rep
+		// isn't under any of them, their distributor isn't demo-eligible →
+		// task complete (the spec's "not in the dropdown → skip" rule). ──────
+		s = step(`Find distributor for ${lastFirst}`);
 		const match = await findDistributorForRep(page, first, last, (m) => {
 			s.detail = m;
 		});
 		if (!match) {
 			if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
 			s.status = "done";
-			s.detail = `${lastFirst} not listed under any distributor`;
+			s.detail = `${lastFirst} not under any demo-eligible distributor`;
 			await goHome(page);
 			await finish(
-				`${input.repName} not found in Kairuku — ${
-					input.dryRun
-						? 'DRY RUN: would be logged as "NOT IN k."'
-						: 'logged on the Overage reps sheet as "NOT IN k."'
-				}. No entry made.`,
+				`${input.repName}'s distributor isn't in the Demo Units list — no entry needed. Task complete.`,
 			);
 			return;
 		}
@@ -495,64 +507,42 @@ async function run(input: DemoUnitsInput) {
 		const saved: string[] = [];
 		const overages: string[] = [];
 		for (const entry of entries) {
-			s = step(`${entry.product}: open Demo Units`);
-			await goHome(page);
-			await clickText(page, SEL.navUidTracking);
+			s = step(`${entry.product}: select distributor + rep`);
+			// Fresh page per entry so each starts from a clean Demo Check form.
+			await gotoDemoPage(page);
 			await settle(page);
-			await clickText(page, SEL.navDemoUnits);
-			await settle(page);
-			s.status = "done";
-
-			s = step(`${entry.product}: select distributor`);
-			// Prefer the real #DistributorID select; fall back to label lookup.
-			let distSelect = page.locator(SEL.distributorSelect).first();
-			if ((await distSelect.count()) === 0)
-				distSelect = await labeledControl(page, SEL.labelDistributor, SELECT_KINDS);
+			const distSelect = page.locator(SEL.distributorSelect).first();
 			const distMatch = await pickOption(distSelect, distributor);
 			if (!distMatch) {
-				s.status = "done";
-				s.detail = `"${distributor}" isn't an option in the Demo Units distributor dropdown`;
-				await goHome(page);
-				await finish(
-					`${distributor} isn't in the Demo Units dropdown — no entry needed. Task complete.`,
-				);
-				return;
+				throw new Error(`"${distributor}" vanished from the demo distributor dropdown`);
 			}
-			await settle(page); // postback repopulates the sales-rep dropdown
-			s.status = "done";
-			s.detail = distMatch;
+			await settle(page); // AJAX repopulates the sales-rep dropdown
 
-			s = step(`${entry.product}: select sales rep ${lastFirst}`);
-			let repSelect = page.locator(SEL.salesRepSelect).first();
-			if ((await repSelect.count()) === 0)
-				repSelect = await labeledControl(page, SEL.labelSalesRep, SELECT_KINDS);
+			const repSelect = page.locator(SEL.salesRepSelect).first();
 			const repOptions = (await repSelect.locator("option").allTextContents()).map((o) =>
 				o.trim(),
 			);
 			const repMatch =
 				repOptions.find((o) => o === foundRepLabel) ??
 				repOptions.find((o) => matchesLastFirst(o, first, last));
-			if (!repMatch) {
-				throw new Error(
-					`${lastFirst} isn't in the sales rep dropdown for ${distMatch}`,
-				);
-			}
+			if (!repMatch) throw new Error(`${lastFirst} isn't in the rep dropdown for ${distMatch}`);
 			await repSelect.selectOption({ label: repMatch });
 			await repSelect.dispatchEvent("change").catch(() => {});
 			await settle(page);
 			s.status = "done";
-			s.detail = repMatch;
+			s.detail = `${distMatch} · ${repMatch}`;
 
 			s = step(`${entry.product}: product + ${entry.qty} requested → verify`);
-			const productSelect = await labeledControl(page, SEL.labelProduct, SELECT_KINDS);
+			const productSelect = page.locator(SEL.productSelect).first();
 			const wantedProduct =
 				entry.product === "MONTAGE" ? SEL.productMontage : SEL.productFlowable;
 			if (!(await pickOption(productSelect, wantedProduct))) {
 				throw new Error(`No product option matching ${entry.product}`);
 			}
-			const qtyInput = await labeledControl(page, SEL.labelDemoUnitsRequested, INPUT_KINDS);
-			await qtyInput.fill(String(entry.qty));
-			await clickText(page, SEL.btnVerify);
+			await productSelect.dispatchEvent("change").catch(() => {});
+			await settle(page);
+			await page.locator(SEL.qtyInput).first().fill(String(entry.qty));
+			await page.locator(SEL.btnVerifyId).first().click();
 			await settle(page);
 			s.status = "done";
 
