@@ -160,7 +160,7 @@ export function PriceInformation() {
 
 						<div className="mt-3 flex flex-wrap gap-2">
 							<Chip tone="ok">
-								{result.approved.length} approved here
+								{result.approved.length} Use Here
 							</Chip>
 							{result.systemExtras.length > 0 && (
 								<Chip tone="warn">+{result.systemExtras.length} from sister facilities</Chip>
@@ -179,12 +179,29 @@ export function PriceInformation() {
 									right system
 								</summary>
 								<ul className="mt-2 space-y-1 text-xs text-neutral-500 dark:text-neutral-400">
-									{result.sisters.map((s) => (
-										<li key={s.code}>
-											#{s.code} · {s.name} — {s.city}, {s.state}
-											{s.approvedCount > 0 ? ` · ${s.approvedCount} approved` : ""}
-										</li>
-									))}
+									{result.sisters.map((s) => {
+										const head = `#${s.code} · ${s.name} — ${s.city}, ${s.state}`;
+										return s.approved.length > 0 ? (
+											<li key={s.code} className="list-none">
+												<details>
+													<summary className="cursor-pointer">
+														{head} · {s.approved.length} approved
+													</summary>
+													<ul className="ml-5 mt-1 mb-1.5 list-disc space-y-0.5">
+														{s.approved.map((p, i) => (
+															<li key={i}>
+																{p.product} — {p.price}
+															</li>
+														))}
+													</ul>
+												</details>
+											</li>
+										) : (
+											<li key={s.code} className="list-none">
+												{head}
+											</li>
+										);
+									})}
 								</ul>
 							</details>
 						)}

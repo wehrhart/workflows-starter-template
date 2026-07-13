@@ -12,15 +12,20 @@
  * responses contain only status strings — never cookies, tokens, or
  * credentials.
  *
- * Endpoints (all JSON):
- *   GET  /api/kairuku/status      → current status (no side effects)
- *   POST /api/kairuku/open-login  → open the headed login window
- *   POST /api/kairuku/check       → verify the saved session headlessly
- *   POST /api/kairuku/close       → close any open Kairuku browser window
+ * Endpoints (all JSON unless noted):
+ *   GET  /api/kairuku/status              → current status (no side effects)
+ *   POST /api/kairuku/open-login          → open the headed login window
+ *   POST /api/kairuku/check               → verify the saved session headlessly
+ *   POST /api/kairuku/close               → close any open Kairuku browser window
+ *   POST /api/kairuku/demo-units/extract  → { imageBase64 } → OCR'd sheet fields
+ *   POST /api/kairuku/demo-units/run      → start a Demo Units run
+ *   GET  /api/kairuku/demo-units/run      → current/last run progress
+ *   GET  /api/kairuku/overage             → Overage reps rows
+ *   GET  /api/kairuku/overage.xlsx        → the sheet as a downloadable Excel file
  */
 
 import { createServer } from "node:http";
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import {
 	checkKairukuSessionStatus,
 	closeKairukuBrowser,
@@ -28,6 +33,10 @@ import {
 	openKairukuLoginWindow,
 	KAIRUKU_URL,
 } from "./kairukuSessionManager.ts";
+import { getDemoUnitsRun, startDemoUnitsRun } from "./demoUnitsRunner.ts";
+import type { DemoUnitsInput } from "./demoUnitsRunner.ts";
+import { extractShippingSheet } from "./extractShippingSheet.ts";
+import { buildOverageXlsx, getOverageRows } from "./overageSheet.ts";
 
 const PORT = Number(process.env.KAIRUKU_SESSION_PORT ?? 5281);
 const HOST = "127.0.0.1";
@@ -43,6 +52,31 @@ function sendJson(res: ServerResponse, code: number, body: unknown) {
 		"access-control-allow-headers": "content-type",
 	});
 	res.end(JSON.stringify(body));
+}
+
+/** Read a JSON request body (photos arrive base64-encoded, so allow ~30 MB). */
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+	return new Promise((resolve, reject) => {
+		const chunks: Buffer[] = [];
+		let size = 0;
+		req.on("data", (c: Buffer) => {
+			size += c.length;
+			if (size > 30 * 1024 * 1024) {
+				reject(new Error("Request too large (max 30 MB)"));
+				req.destroy();
+				return;
+			}
+			chunks.push(c);
+		});
+		req.on("end", () => {
+			try {
+				resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"));
+			} catch {
+				reject(new Error("Body isn't valid JSON"));
+			}
+		});
+		req.on("error", reject);
+	});
 }
 
 const server = createServer(async (req, res) => {
@@ -61,6 +95,34 @@ const server = createServer(async (req, res) => {
 				return sendJson(res, 200, await checkKairukuSessionStatus());
 			case "POST /api/kairuku/close":
 				return sendJson(res, 200, await closeKairukuBrowser());
+
+			case "POST /api/kairuku/demo-units/extract": {
+				const body = await readJson(req);
+				const b64 = String(body.imageBase64 ?? "").replace(/^data:[^,]+,/, "");
+				if (!b64) return sendJson(res, 400, { error: "imageBase64 is required" });
+				const result = await extractShippingSheet(Buffer.from(b64, "base64"));
+				return sendJson(res, 200, result);
+			}
+			case "POST /api/kairuku/demo-units/run": {
+				const body = await readJson(req);
+				return sendJson(res, 200, await startDemoUnitsRun(body as unknown as DemoUnitsInput));
+			}
+			case "GET /api/kairuku/demo-units/run":
+				return sendJson(res, 200, getDemoUnitsRun() ?? { state: "none" });
+
+			case "GET /api/kairuku/overage":
+				return sendJson(res, 200, { rows: getOverageRows() });
+			case "GET /api/kairuku/overage.xlsx": {
+				const bytes = buildOverageXlsx();
+				res.writeHead(200, {
+					"content-type":
+						"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+					"content-disposition": 'attachment; filename="Overage reps.xlsx"',
+					"access-control-allow-origin": "*",
+				});
+				return res.end(Buffer.from(bytes));
+			}
+
 			default:
 				return sendJson(res, 404, { error: "not found" });
 		}
