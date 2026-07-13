@@ -54,6 +54,7 @@ interface Run {
 	steps?: RunStep[];
 	outcome?: string;
 	screenshot?: string;
+	htmlDump?: string;
 	debugDir?: string;
 }
 
@@ -430,11 +431,18 @@ export function DemoUnits() {
 								}`}
 							>
 								{run.outcome ?? (run.state === "completed" ? "Done." : "Something went wrong.")}
+								{run.htmlDump && (
+									<div className="mt-2 text-xs opacity-80">
+										<strong>Best fix:</strong> the exact page was saved to{" "}
+										<span className="font-mono">{run.htmlDump}</span> — send that
+										file to Claude and it can write the precise selector for the
+										step that stopped.
+									</div>
+								)}
 								{run.screenshot && (
 									<div className="mt-2 text-xs opacity-80">
-										A screenshot of where it stopped was saved to{" "}
-										<span className="font-mono">{run.screenshot}</span> — send it
-										to Claude to get the step fixed.
+										A screenshot is also at{" "}
+										<span className="font-mono">{run.screenshot}</span>.
 									</div>
 								)}
 								{run.debugDir && (

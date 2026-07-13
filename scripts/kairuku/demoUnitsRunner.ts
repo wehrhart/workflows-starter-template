@@ -30,7 +30,7 @@
  * adjust the matching entry here to whatever the real page shows.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Locator, Page } from "playwright";
 import { requireKairukuSession, KAIRUKU_URL } from "./kairukuSessionManager.ts";
@@ -110,6 +110,8 @@ export interface DemoUnitsRun {
 	finishedAt?: string;
 	/** Failure screenshot path, when a step failed. */
 	screenshot?: string;
+	/** Failure page-HTML path (has the real WebForms control IDs). */
+	htmlDump?: string;
 	/** Folder holding a screenshot of every completed step of this run. */
 	debugDir?: string;
 }
@@ -602,14 +604,25 @@ async function run(input: DemoUnitsInput) {
 			running.status = "failed";
 			running.detail = msg;
 		}
-		// Failure screenshot for selector tuning; path is surfaced in the UI.
+		// Failure screenshot AND page HTML for selector tuning. Kairuku is an
+		// ASP.NET WebForms app, so the HTML carries the exact control IDs — the
+		// single most useful thing to hand Claude to write a precise selector.
+		// Long __VIEWSTATE/__EVENTVALIDATION tokens are redacted (huge + useless
+		// for selectors); everything structural is kept.
 		try {
 			if (!existsSync(DEBUG_DIR)) mkdirSync(DEBUG_DIR, { recursive: true });
-			const shot = path.join(DEBUG_DIR, `demo-units-failure-${Date.now()}.png`);
+			const stamp = Date.now();
+			const shot = path.join(DEBUG_DIR, `demo-units-failure-${stamp}.png`);
 			await page!.screenshot({ path: shot, fullPage: true });
 			if (currentRun) currentRun.screenshot = shot;
+			const htmlPath = path.join(DEBUG_DIR, `demo-units-failure-${stamp}.html`);
+			const html = (await page!.content())
+				.replace(/(__VIEWSTATE\w*"\s+value=")[^"]*/g, "$1[redacted]")
+				.replace(/(__EVENTVALIDATION"\s+value=")[^"]*/g, "$1[redacted]");
+			writeFileSync(htmlPath, html);
+			if (currentRun) currentRun.htmlDump = htmlPath;
 		} catch {
-			// screenshot is best-effort
+			// best-effort
 		}
 		await goHome(page!).catch(() => {});
 		await finish(`Stopped at a step that didn't match the page: ${msg}`, "failed");

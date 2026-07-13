@@ -242,7 +242,17 @@ async function isAuthenticated(page: Page): Promise<boolean> {
 			);
 		}
 
-		// ── Heuristic fallback (replace with the selector when known) ──
+		// ── Kairuku's REAL login markers (confirmed from beta.kairuku.com) ──
+		// It's an ASP.NET WebForms app: the login page has id="Username" and
+		// id="Password" and the title "KAIRUKU - Administration". If either
+		// credential field is present, we are NOT logged in — the single most
+		// reliable signal, and what keeps the window open through login + MFA.
+		const loginField = page
+			.locator("#Username, #Password")
+			.first();
+		if (await loginField.isVisible().catch(() => false)) return false;
+
+		// ── Generic heuristic fallback ──
 		const url = page.url();
 		if (!url.startsWith("http")) return false;
 		if (AUTH_URL_HINTS.test(url)) return false;
