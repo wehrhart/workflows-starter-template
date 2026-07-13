@@ -56,15 +56,27 @@ const SEL = {
 	productSelect: "#Item_DemoCheck",
 	qtyInput: "#DemoUnitsReequested_DemoCheck", // yes, Kairuku spells it "Reequested"
 	btnVerifyId: "#Button_DemoCheck_Submit",
-	/** Post-verify controls (text-matched; appear after clicking Verify). */
+	/**
+	 * Post-verify controls. Confirmed on live screenshots (2026-07-13):
+	 * Verify stays on the same page and reveals a Status panel with
+	 * "CONTINUE TO ADD"; Continue opens the "Demo Tracking Sheet" edit page.
+	 * ("Request Overage" is still unconfirmed — no overage case seen yet.)
+	 */
 	btnVerify: "Verify Demo Unit Request",
 	btnOverage: "Request Overage",
 	btnContinue: "Continue to Add",
 	btnSave: "Save",
-	/** Final page fields (label-matched until confirmed). */
-	labelNotes: /note/i,
-	labelUnits: /^units/i,
-	labelTracking: /tracking/i,
+	btnCancel: "Cancel",
+	/**
+	 * Final page ("Demo Tracking Sheet") fields — anchored to the exact
+	 * labels in Will's live screenshots. labelTracking MUST stay anchored to
+	 * "tracking number": the page's title and breadcrumb both contain
+	 * "Tracking", and an unanchored /tracking/i landed on the breadcrumb,
+	 * which would put the tracking number in the Date of Transfer field.
+	 */
+	labelNotes: /^notes/i,
+	labelUnits: /^units\b/i,
+	labelTracking: /^tracking number/i,
 	labelFulfilled: /fulfilled/i,
 	/** Product option text — exact "MONTAGE" (not "MONTAGE Fast Set") vs Flowable. */
 	productMontage: /^montage$/i,
@@ -332,6 +344,45 @@ async function pickOption(
 	return match;
 }
 
+/**
+ * The Demo Tracking Sheet page has THREE "SAVE" buttons: two small ones
+ * inside the "Demo Unit Information" box (Add Individual UID / Add UID
+ * Range) and the real one next to CANCEL. Click the one sharing a parent
+ * with CANCEL; fall back to the last SAVE on the page (the main SAVE/CANCEL
+ * pair renders below the UID box). Never use clickText for this — it takes
+ * the FIRST match, which is the Add-Individual-UID save.
+ */
+async function clickMainSave(page: Page) {
+	const cancel = page.getByRole("button", { name: /^cancel$/i }).first();
+	if (await cancel.isVisible().catch(() => false)) {
+		const paired = cancel
+			.locator("xpath=..")
+			.getByRole("button", { name: /^save$/i })
+			.first();
+		if (await paired.isVisible().catch(() => false)) {
+			await paired.click();
+			return;
+		}
+	}
+	await page.getByRole("button", { name: /^save$/i }).last().click();
+}
+
+/**
+ * Back out of the Demo Tracking Sheet page without saving. CANCEL is the
+ * page's own discard button — prefer it over just navigating away, in case
+ * "Continue to Add" opened a draft record that navigation would leave
+ * behind (the page presents as an EDIT form, so this is a real risk until
+ * confirmed otherwise).
+ */
+async function cancelOut(page: Page) {
+	await page
+		.getByRole("button", { name: /^cancel$/i })
+		.first()
+		.click()
+		.catch(() => {});
+	await settle(page);
+}
+
 async function settle(page: Page) {
 	await page.waitForLoadState("domcontentloaded").catch(() => {});
 	await page.waitForLoadState("networkidle", { timeout: 8_000 }).catch(() => {});
@@ -578,10 +629,11 @@ async function run(input: DemoUnitsInput) {
 				s.status = "done";
 				s.detail = "DRY RUN — every field filled, stopped before Save";
 				saved.push(`${entry.product} (${entry.qty}) — dry run, NOT saved`);
-				await goHome(page); // backs out; nothing is half-entered (Dashboard resets the form)
+				await cancelOut(page); // discard via the page's own CANCEL, then home
+				await goHome(page);
 				continue;
 			}
-			await clickText(page, SEL.btnSave);
+			await clickMainSave(page);
 			await settle(page);
 			saved.push(`${entry.product} (${entry.qty})`);
 			s.status = "done";
@@ -627,6 +679,9 @@ async function run(input: DemoUnitsInput) {
 		} catch {
 			// best-effort
 		}
+		// If the failure happened on the Demo Tracking Sheet page, discard the
+		// draft via CANCEL before leaving (harmless no-op on any other page).
+		await cancelOut(page!).catch(() => {});
 		await goHome(page!).catch(() => {});
 		await finish(`Stopped at a step that didn't match the page: ${msg}`, "failed");
 	}

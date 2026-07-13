@@ -33,23 +33,37 @@ Works for either calibration mode:
 | `qtyInput`           | `#DemoUnitsReequested_DemoCheck`   | Kairuku really spells it "Reequested" |
 | `btnVerifyId`        | `#Button_DemoCheck_Submit`         | |
 
-### UNCONFIRMED — the calibration targets
+### CONFIRMED from Will's live screenshots (2026-07-13)
 
-| SEL key          | Current guess                  | Needed evidence |
-|------------------|--------------------------------|-----------------|
-| `btnOverage`     | text "Request Overage"         | post-Verify page, overage case |
-| `btnContinue`    | text "Continue to Add"         | post-Verify page, normal case |
-| `btnSave`        | text "Save"                    | final add page |
-| `labelNotes`     | label matching `/note/i`       | final add page — need real control ID |
-| `labelUnits`     | label matching `/^units/i`     | final add page — need real control ID |
-| `labelTracking`  | label matching `/tracking/i`   | final add page — need real control ID |
-| `labelFulfilled` | label matching `/fulfilled/i`  | final add page — need real checkbox ID (current fallback is "first checkbox on the page": too loose) |
-| `productMontage` | `/^montage$/i`                 | re-verify exact option text on a fresh capture (must NOT match "MONTAGE Fast Set") |
-| `productFlowable`| `/montage\s*flowable/i`        | same |
+- Product options are exactly `MONTAGE` / `MONTAGE Fast Set` /
+  `MONTAGE Flowable` — `productMontage` and `productFlowable` regexes are
+  safe (anchored match can't hit "Fast Set").
+- Verify does NOT navigate: it reveals a Status panel (training info,
+  demos sent this quarter/all time) with a "CONTINUE TO ADD" button on the
+  same page. `btnContinue` text confirmed.
+- Rep option format is `Last, First (Distributor Name)` —
+  `matchesLastFirst` handles the parenthetical suffix.
+- Continue to Add opens the "Demo Tracking Sheet" page (breadcrumb:
+  Demo Tracking Sheets > Edit Demo Tracking Sheet). Field labels confirmed:
+  `Notes*`, `Tracking Number`, `Units*`, `Closed / This Request is
+  Fulfilled` checkbox, `Item` dropdown (prefilled with the SKU, e.g.
+  OS-MON-1604), `Date of Transfer`, Origin/Destination Type radios and
+  Destination + Sales Rep dropdowns (all prefilled correctly).
+- ⚠ That page has THREE "SAVE" buttons (Add Individual UID, Add UID Range,
+  and the real SAVE next to CANCEL) — the runner uses `clickMainSave()`
+  (the SAVE paired with CANCEL), never first-match text.
+- ⚠ Page title/breadcrumb contain "Tracking" — `labelTracking` must stay
+  anchored to `/^tracking number/i`.
 
-Also confirm on the post-Verify page: does Verify navigate, or update the
-same page in place? Does the overage case replace "Continue to Add" or show
-both buttons?
+### STILL UNCONFIRMED
+
+| Item | Status |
+|------|--------|
+| `btnOverage` "Request Overage" | no overage case captured yet — text is still the spec's wording |
+| UID requirement | page warns "Entered number of UIDs (0) does not match Units (N)". Does SAVE succeed with 0 UIDs? Does Will's manual workflow enter UIDs here? **Ask Will.** |
+| Does "Continue to Add" create a draft record? | breadcrumb says "Edit …", so possibly. Until confirmed, the runner backs out via the page's CANCEL button (`cancelOut()`) in dry-run and on failure. Confirm by checking the Demo Units list for a stray row after a cancelled walk-through. |
+| Direct URL of the Demo Check page | need an address-bar screenshot to re-confirm `demoPagePath` |
+| Top-level nav / "Dashboard" label | screenshots crop above the sub-tab strip (Tracking Sheets … Inventory Expiry); `goHome()` falls back to `page.goto(KAIRUKU_URL)` so this is low-risk |
 
 ## Capture procedure (per page)
 
