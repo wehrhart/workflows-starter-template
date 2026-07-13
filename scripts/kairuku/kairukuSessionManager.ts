@@ -24,7 +24,7 @@
  *   node --experimental-strip-types scripts/kairuku/kairuku-session-server.ts
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
@@ -142,6 +142,14 @@ async function launchPersistent(headless: boolean): Promise<BrowserContext> {
 			headless,
 			// Natural window size for a login the user drives by hand.
 			viewport: null,
+			// Headless checks must NOT advertise themselves as a bot: the old
+			// headless shell's user agent says "HeadlessChrome", which some
+			// sites answer with the login page even for a valid session. The
+			// "chromium" channel runs the regular Chromium binary in new
+			// headless mode, whose user agent is normal Chrome.
+			...(headless && !process.env.KAIRUKU_CHROMIUM_PATH
+				? { channel: "chromium" as const }
+				: {}),
 			// Normally Playwright finds its own Chromium; set this env var only
 			// if you need to point at a specific Chromium/Chrome binary.
 			executablePath: process.env.KAIRUKU_CHROMIUM_PATH || undefined,
@@ -154,6 +162,37 @@ async function launchPersistent(headless: boolean): Promise<BrowserContext> {
 			);
 		}
 		throw err;
+	}
+}
+
+/**
+ * Fresh headless loads can bounce through sign-in redirects before landing
+ * on the logged-in app, so a single instant check reports false logouts.
+ * Poll for up to ~18s before concluding the session is dead.
+ */
+async function waitForAuthenticated(page: Page): Promise<boolean> {
+	for (let i = 0; i < 6; i++) {
+		if (await isAuthenticated(page)) return true;
+		await sleep(3_000);
+	}
+	return false;
+}
+
+/**
+ * When a headless check concludes "not logged in", capture what it actually
+ * saw — the page URL (query redacted; it can hold tokens) and a screenshot —
+ * so a wrong conclusion can be diagnosed instead of guessed at.
+ */
+async function describeCheckFailure(page: Page): Promise<string> {
+	try {
+		const debugDir = path.join(os.homedir(), ".abyrx-kairuku", "data", "debug");
+		mkdirSync(debugDir, { recursive: true });
+		const shot = path.join(debugDir, `session-check-${Date.now()}.png`);
+		await page.screenshot({ path: shot }).catch(() => {});
+		const u = new URL(page.url());
+		return `the check saw ${u.origin}${u.pathname} (screenshot: ${shot})`;
+	} catch {
+		return "the check couldn't read the page";
 	}
 }
 
@@ -382,10 +421,13 @@ export async function checkKairukuSessionStatus(): Promise<KairukuStatusReport> 
 		ctx = await launchPersistent(true);
 		const page = currentPage(ctx) ?? (await ctx.newPage());
 		await page.goto(KAIRUKU_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
-		if (await isAuthenticated(page)) {
+		if (await waitForAuthenticated(page)) {
 			setStatus("live", "Kairuku session is live and ready.");
 		} else {
-			setStatus("relogin_required", "Saved session has expired — log in again.");
+			setStatus(
+				"relogin_required",
+				`Couldn't confirm the saved session — ${await describeCheckFailure(page)}. If you just logged in, try Check Session Status once more.`,
+			);
 		}
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : "unknown error";
@@ -453,9 +495,10 @@ export async function getKairukuAuthenticatedPage(): Promise<{
 		setStatus("relogin_required", "Could not reach Kairuku to verify the session.");
 		throw new KairukuReloginRequiredError("could not reach Kairuku");
 	}
-	if (!(await isAuthenticated(page))) {
+	if (!(await waitForAuthenticated(page))) {
+		const seen = await describeCheckFailure(page);
 		await closeActiveContext();
-		setStatus("relogin_required", "Saved session has expired — log in again.");
+		setStatus("relogin_required", `Couldn't confirm the session — ${seen}.`);
 		throw new KairukuReloginRequiredError("session expired");
 	}
 	setStatus("live", "Kairuku session is live and ready.");
