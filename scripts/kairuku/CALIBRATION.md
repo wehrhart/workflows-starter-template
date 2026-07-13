@@ -83,12 +83,21 @@ Works for either calibration mode:
   in the demo-eligible dropdown. Per Will — do not "fix" this into a
   nothing-logged outcome.
 
+### Overage case — CONFIRMED live (2026-07-13)
+
+A dual dry run (MONTAGE 1 + FLOWABLE 2 for Dickey) tripped the real
+overage: after Verify, Kairuku renders **`Button_DemoCheck_RequestApproval`**
+(label "Request Approval" — the spec's "Request Overage") INSTEAD of
+CONTINUE TO ADD. The runner waits for whichever of the two appears,
+never clicks the approval button, logs the rep + product on the overage
+sheet, backs out via Dashboard, and still processes the other entry.
+
 ### STILL UNCONFIRMED
 
 | Item | Status |
 |------|--------|
-| `btnOverage` "Request Overage" | no overage case captured yet — text is still the spec's wording. Deliberately NOT forcing one on a real rep. If a real overage renders differently, the run's failure box provides the fix in one paste. |
 | CANCEL discards the draft row | assumed (standard semantics); verify after the first cancelled walk-through that no stray row appears in the Demo Units list. |
+| Overage + Continue mutually exclusive | assumed from live behavior (each case showed exactly one button). Overage is checked FIRST, so if Kairuku ever shows both, the run takes the safe path (log + skip). |
 
 ## Capture procedure (per page)
 

@@ -76,6 +76,14 @@ const SEL = {
 	 */
 	btnVerify: "Verify Demo Unit Request",
 	btnOverage: "Request Overage",
+	/**
+	 * The overage control's REAL id, confirmed by a live dry run that
+	 * tripped it (2 Flowable for a rep): after Verify, Kairuku renders
+	 * Button_DemoCheck_RequestApproval instead of CONTINUE TO ADD. Its label
+	 * reads "Request Approval" — the spec calls this "Request Overage".
+	 * NEVER click it.
+	 */
+	btnOverageId: "#Button_DemoCheck_RequestApproval",
 	btnContinue: "Continue to Add",
 	btnSave: "Save",
 	btnCancel: "Cancel",
@@ -779,14 +787,50 @@ async function run(input: DemoUnitsInput) {
 			await settle(page);
 			s.status = "done";
 
-			// ── Part 3: overage vs continue ──
-			if (await textVisible(page, SEL.btnOverage)) {
+			// ── Part 3: overage vs continue. Verify updates the page in place
+			// and shows exactly one of: CONTINUE TO ADD (normal) or the overage
+			// button (#Button_DemoCheck_RequestApproval / "Request Approval" /
+			// the spec's "Request Overage"). Wait for whichever appears; NEVER
+			// click the overage one. ──
+			const overageVisible = async () =>
+				(await page.locator(SEL.btnOverageId).first().isVisible().catch(() => false)) ||
+				(await textVisible(page, SEL.btnOverage)) ||
+				(await page
+					.getByRole("button", { name: /request (overage|approval)/i })
+					.first()
+					.isVisible()
+					.catch(() => false));
+			const continueVisible = async () =>
+				(await page
+					.getByRole("button", { name: /continue to add/i })
+					.first()
+					.isVisible()
+					.catch(() => false)) ||
+				(await page
+					.getByRole("link", { name: /continue to add/i })
+					.first()
+					.isVisible()
+					.catch(() => false));
+			let verdict: "overage" | "continue" | null = null;
+			const verdictDeadline = Date.now() + 10_000;
+			while (!verdict && Date.now() < verdictDeadline) {
+				if (await overageVisible()) verdict = "overage";
+				else if (await continueVisible()) verdict = "continue";
+				else await page.waitForTimeout(250);
+			}
+			if (verdict === "overage") {
 				if (!input.dryRun) addOverageRow(input.repName, entry.product.toLowerCase());
 				s = step(`${entry.product}: overage — logged, skipping this entry`);
 				s.status = "done";
+				if (input.dryRun) s.detail = "dry run — not actually logged";
 				overages.push(entry.product);
-				await goHome(page); // never click Request Overage
+				await goHome(page); // never click Request Approval / Request Overage
 				continue;
+			}
+			if (verdict !== "continue") {
+				throw new Error(
+					"After Verify, neither CONTINUE TO ADD nor the overage button appeared.",
+				);
 			}
 			await clickText(page, SEL.btnContinue);
 			await settle(page);
