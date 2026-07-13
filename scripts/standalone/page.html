@@ -216,6 +216,7 @@
   .dot2 { margin-top: 6px; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--border-strong); }
   .dot2.running { background: #f59e0b; animation: pulse 1s ease-in-out infinite; }
   .dot2.done { background: #10b981; }
+  .dot2.failed { background: #ef4444; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
   @media (prefers-reduced-motion: reduce) { .dot2.running { animation: none; } }
   .step .sname { font-size: 14px; font-weight: 500; color: var(--text-strong); }
@@ -759,7 +760,7 @@
       '<div class="meta">The Kairuku login window is opened by a companion app on <b>your computer</b> — a hosted web page can’t launch a browser window by itself. One-time setup, no terminal typing:</div>' +
       '<ol class="meta" style="margin:8px 0 0;padding-left:20px;line-height:1.9">' +
       '<li>Install Node.js: at <a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a>, click the big green <b>LTS</b> button and run the installer (all defaults).</li>' +
-      '<li><a href="https://github.com/wehrhart/workflows-starter-template/archive/refs/heads/feature/kairuku-session-manager.zip" target="_blank" rel="noopener"><b>Download the Abyrx tools folder (ZIP)</b></a>, double-click the ZIP to unpack it, and keep the folder somewhere handy (e.g. Documents).</li>' +
+      '<li><a href="https://github.com/wehrhart/workflows-starter-template/archive/refs/heads/main.zip" target="_blank" rel="noopener"><b>Download the Abyrx tools folder (ZIP)</b></a>, double-click the ZIP to unpack it, and keep the folder somewhere handy (e.g. Documents). Re-downloading this ZIP is also how you update the tools folder when a new version ships.</li>' +
       '<li>Open the folder and double-click <b>Start Abyrx Tools</b> (Mac: right-click → Open, just the first time). First start installs everything (a few minutes), then your browser opens the tools.</li>' +
       '</ol>' +
       '<div class="meta" style="margin-top:8px">From then on it’s just that one double-click. Use the <b>Kairuku Session</b> tab in the app it opens (http://localhost:5280) to log in.</div>' +
@@ -807,42 +808,290 @@
       .catch(function () { kkBusy = false; kkApply(null); });
   }
 
-  // ---- Demo Units (runs in the local app; this page is the signpost) ----
+  // ---- Demo Units ----
+  // The full tool, right on this page. The heavy lifting (Playwright driving
+  // the logged-in Kairuku window, OCR, the overage sheet) happens in the
+  // local session service — this panel is the exact same remote control as
+  // the local app's Demo Units tab, POSTing to 127.0.0.1:5281. When the
+  // service isn't reachable, it degrades to setup instructions.
+  var DU_QTY = [
+    { key: "montage", label: "Montage", code: "M" },
+    { key: "gun", label: "Gun", code: "G" },
+    { key: "cartridge", label: "Cartridge", code: "C" },
+    { key: "tips", label: "Tips", code: "T" },
+    { key: "hemasorb", label: "Hemasorb", code: "H" },
+    { key: "hemasorbApply", label: "Hemasorb Apply", code: "HA" },
+    { key: "permatage", label: "Permatage", code: "P" }
+  ];
+  var duLive = false, duBusy = false, duPollTimer = null;
+
   function renderDemoUnits() {
+    var qtyInputs = DU_QTY.map(function (f) {
+      return '<label style="display:block"><div class="sdesc" style="margin-bottom:4px">' + f.label +
+        ' <span style="color:var(--faint)">(' + f.code + ')</span></div>' +
+        '<input class="qin" id="du_q_' + f.key + '" inputmode="numeric" placeholder="—"></label>';
+    }).join("");
     return '<div class="wrap">' +
       '<div style="margin-bottom:20px"><h1 class="page">Demo Units</h1>' +
-      '<p class="sub">Type in the tracking number, rep name, and quantities → the tool finds the rep’s distributor in Kairuku, enters the demo (MONTAGE and/or Montage Flowable), logs overages, and marks the order fulfilled.</p></div>' +
-      '<div class="card">' +
-      '<div class="meta" id="du_state">Checking for the local app…</div>' +
+      '<p class="sub">Type in the tracking number, rep name, and quantities → the tool finds the rep’s distributor in Kairuku, enters the demo (MONTAGE and/or MONTAGE Flowable), logs overages, and marks the order fulfilled.</p></div>' +
+      '<div class="chips" style="margin-bottom:16px"><span class="chip neutral" id="du_pill">Checking for the local service…</span></div>' +
+      '<div class="card" id="du_offline" style="display:none;margin-bottom:20px">' +
+      '<div class="meta">Demo Units drives a real browser through Kairuku, so it needs the local service — double-click <b>Start Abyrx Tools</b> in your tools folder, keep the window it opens in the background, then come back to this tab. First time? The <b>Kairuku Session</b> tab has the one-time setup (Node.js + the tools folder ZIP).</div>' +
+      '</div>' +
+      '<div class="card" id="du_livegate" style="display:none;margin-bottom:20px">' +
+      '<div class="meta"><b>Kairuku isn’t live.</b> Open the <b>Kairuku Session</b> tab, get it green (Live / Ready), then come back — Submit unlocks automatically.</div>' +
+      '</div>' +
+      '<div class="card" id="du_inspectcard" style="display:none;margin-bottom:20px">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">' +
+      '<button class="btn ghost" id="du_capture">Capture current Kairuku page</button>' +
+      '<span class="sdesc">Navigate the Kairuku window to any screen, capture, and paste the box to Claude — so it can see the real page.</span></div>' +
+      '<textarea class="qin" id="du_capbox" readonly style="display:none;margin-top:12px;height:140px;width:100%;font-family:ui-monospace,monospace;font-size:11px"></textarea>' +
+      '</div>' +
+      '<div class="card" id="du_formcard" style="margin-bottom:20px">' +
+      '<div style="font-weight:600;color:var(--text-strong);margin-bottom:4px">1 · Demo details</div>' +
+      '<div class="meta" style="margin-bottom:16px">Enter the tracking number, the rep’s name, and the quantities from the shipping sheet, then Submit.</div>' +
+      '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px;padding:8px 12px;border-radius:10px;background:var(--chip)">' +
+      '<span class="sdesc">Optional — fill the fields from a photo:</span>' +
+      '<input type="file" id="du_photo" accept="image/*,.heic,.heif" style="font-size:12px;max-width:100%">' +
+      '<span class="sdesc" id="du_photostate"></span></div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">' +
+      '<label style="display:block"><div class="sdesc" style="margin-bottom:4px">Tracking number (12 digits)</div><input class="qin" id="du_tracking" inputmode="numeric"></label>' +
+      '<label style="display:block"><div class="sdesc" style="margin-bottom:4px">Rep name (First Last)</div><input class="qin" id="du_rep"></label>' +
+      '</div>' +
+      '<div class="sdesc" style="margin:16px 0 8px">Quantities — leave blank anything not in this demo</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px">' + qtyInputs + '</div>' +
+      '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:16px;font-size:14px;color:var(--muted)"><input type="checkbox" id="du_dry" style="margin-top:3px">' +
+      '<span><b>Dry run</b> — walk every Kairuku step and fill every field, but stop right before Save and back out via Cancel. Nothing is entered, nothing is logged. Use this to test safely.</span></label>' +
       '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px">' +
-      '<a class="btn" id="du_open" href="http://localhost:5280/#/demo-units" style="display:none;text-decoration:none">Open Demo Units in the local app</a>' +
-      '<a class="btn ghost" id="du_sheet" href="http://127.0.0.1:5281/api/kairuku/overage.xlsx" style="display:none;text-decoration:none">Download “Overage reps” Excel</a>' +
+      '<button class="btn" id="du_submit" disabled>Submit — enter in Kairuku</button>' +
+      '<button class="btn ghost" id="du_reset">Start over</button></div>' +
       '</div>' +
-      '<div class="meta" id="du_help" style="display:none;margin-top:16px">Demo Units drives a real browser through Kairuku, so it runs in the local Abyrx app — double-click <b>Start Abyrx Tools</b> in your tools folder (see the Kairuku Session tab for the one-time setup), and it opens with this tool ready.</div>' +
+      '<div class="card" id="du_runcard" style="display:none;margin-bottom:20px">' +
+      '<div style="font-weight:600;color:var(--text-strong);margin-bottom:12px" id="du_runtitle">2 · Entering in Kairuku…</div>' +
+      '<div class="steps" id="du_steps"></div>' +
+      '<div id="du_outcome" style="margin-top:16px"></div>' +
+      '<button class="btn" id="du_again" style="display:none;margin-top:16px">Enter another demo</button>' +
       '</div>' +
-      '<p class="note">Uses the live login from the <b>Kairuku Session</b> tab — get that green first. Fill in the tracking number, rep name, and M/C/G/T/H/HA/P quantities (a photo can optionally pre-fill them), press Submit, and watch it enter step by step in the Kairuku window. Reps that hit “Request Overage” (or aren’t in Kairuku) accumulate on the Overage reps sheet.</p>' +
+      '<div class="meta" id="du_error" style="color:#ef4444"></div>' +
+      '<div class="card" style="margin-top:20px">' +
+      '<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px">' +
+      '<span style="font-weight:600;color:var(--text-strong)">Overage reps</span>' +
+      '<a class="btn ghost" id="du_sheet" href="http://127.0.0.1:5281/api/kairuku/overage.xlsx" style="text-decoration:none">Download Excel</a></div>' +
+      '<div id="du_ovg" class="meta">Empty — reps land here when Kairuku shows “Request Overage” or the rep isn’t found (“NOT IN k.”).</div>' +
+      '</div>' +
+      '<p class="note">Uses the live login from the <b>Kairuku Session</b> tab — get that green first. Check <b>Dry run</b> to walk the whole flow with nothing saved. Watch the Kairuku window while it runs — the tool drives that exact window, step by step.</p>' +
       '</div>';
   }
 
-  function duRefresh() {
+  function duApplyStatus(status) {
+    var pill = document.getElementById("du_pill");
+    if (!pill) return; // not on the Demo Units tab
+    duLive = status === "live";
+    var offline = status === "offline";
+    if (offline) { pill.className = "chip err"; pill.textContent = "Local service not running"; }
+    else if (duLive) { pill.className = "chip ok"; pill.textContent = "Kairuku: Live / Ready"; }
+    else { pill.className = "chip warn"; pill.textContent = "Kairuku isn’t live yet"; }
+    document.getElementById("du_offline").style.display = offline ? "" : "none";
+    document.getElementById("du_livegate").style.display = !offline && !duLive ? "" : "none";
+    document.getElementById("du_inspectcard").style.display = duLive ? "" : "none";
+    var sub = document.getElementById("du_submit");
+    if (sub && !duBusy) sub.disabled = !duLive;
+  }
+
+  function duStatusTick() {
     fetch(KK_SERVICE + "/api/kairuku/status")
       .then(function (r) { return r.json(); })
-      .then(function () {
-        var st = document.getElementById("du_state");
-        if (!st) return;
-        st.textContent = "Local app detected — Demo Units is ready there.";
-        document.getElementById("du_open").style.display = "";
-        document.getElementById("du_sheet").style.display = "";
-        document.getElementById("du_help").style.display = "none";
+      .then(function (b) { duApplyStatus(b && b.status ? b.status : "offline"); })
+      .catch(function () { duApplyStatus("offline"); });
+  }
+
+  function duOverageRefresh() {
+    fetch(KK_SERVICE + "/api/kairuku/overage")
+      .then(function (r) { return r.json(); })
+      .then(function (b) {
+        var box = document.getElementById("du_ovg");
+        if (!box || !b || !b.rows) return;
+        if (!b.rows.length) {
+          box.className = "meta";
+          box.textContent = "Empty — reps land here when Kairuku shows “Request Overage” or the rep isn’t found (“NOT IN k.”).";
+          return;
+        }
+        var html = '<div class="tablewrap"><table><thead><tr><th>Rep Name</th><th>Date</th><th>Type</th></tr></thead><tbody>';
+        b.rows.forEach(function (row) {
+          html += "<tr><td>" + esc(row.rep) + "</td><td>" + esc(row.date) + "</td><td>" + esc(row.type) + "</td></tr>";
+        });
+        box.className = "";
+        box.innerHTML = html + "</tbody></table></div>";
+      })
+      .catch(function () { /* service offline — table stays as-is */ });
+  }
+
+  function duStepsHtml(run) {
+    return (run.steps || []).map(function (s) {
+      var cls = s.status === "running" ? "dot2 running"
+        : s.status === "done" ? "dot2 done"
+        : s.status === "failed" ? "dot2 failed" : "dot2";
+      return '<div class="step"><span class="' + cls + '"></span><div>' +
+        '<div class="sname">' + esc(s.label) + "</div>" +
+        (s.detail ? '<div class="sdesc">' + esc(s.detail) + "</div>" : "") +
+        '</div><span class="sstat">' + esc(s.status) + "</span></div>";
+    }).join("");
+  }
+
+  function duStopPoll() {
+    if (duPollTimer) { clearInterval(duPollTimer); duPollTimer = null; }
+  }
+
+  function duShowRun(running) {
+    document.getElementById("du_formcard").style.display = running ? "none" : "";
+    document.getElementById("du_runcard").style.display = running ? "" : "none";
+  }
+
+  function duFetchRun() {
+    fetch(KK_SERVICE + "/api/kairuku/demo-units/run")
+      .then(function (r) { return r.json(); })
+      .then(function (run) {
+        var steps = document.getElementById("du_steps");
+        if (!steps) { duStopPoll(); return; } // navigated away
+        if (!run || run.state === "none") return;
+        steps.innerHTML = duStepsHtml(run);
+        if (run.state === "completed" || run.state === "failed") {
+          duStopPoll();
+          duBusy = false;
+          document.getElementById("du_runtitle").textContent = "2 · Result";
+          var good = run.state === "completed";
+          var html = '<div class="chip ' + (good ? "ok" : "err") +
+            '" style="display:block;border-radius:12px;padding:12px 16px;font-weight:400">' +
+            esc(run.outcome || (good ? "Done." : "Something went wrong.")) + "</div>";
+          if (run.pageInfo) {
+            html += '<div class="sdesc" style="margin:12px 0 4px"><b>Copy everything in this box and paste it to Claude</b> — it’s the failed page’s structure, exactly what’s needed to fix the step:</div>' +
+              '<textarea class="qin" id="du_failbox" readonly style="height:140px;width:100%;font-family:ui-monospace,monospace;font-size:11px">' +
+              esc(run.pageInfo) + "</textarea>";
+          }
+          if (run.debugDir) {
+            html += '<div class="note">Every step of this run was photographed to <span style="font-family:ui-monospace,monospace">' +
+              esc(run.debugDir) + "</span> — send those images to Claude to review the run screen by screen.</div>";
+          }
+          document.getElementById("du_outcome").innerHTML = html;
+          var fb = document.getElementById("du_failbox");
+          if (fb) fb.onfocus = function () { fb.select(); };
+          document.getElementById("du_again").style.display = "";
+          duOverageRefresh();
+        }
+      })
+      .catch(function () { /* keep polling */ });
+  }
+
+  function duEnterRunning() {
+    duBusy = true;
+    duShowRun(true);
+    document.getElementById("du_runtitle").textContent = "2 · Entering in Kairuku…";
+    document.getElementById("du_steps").innerHTML = "";
+    document.getElementById("du_outcome").innerHTML = "";
+    document.getElementById("du_again").style.display = "none";
+    duStopPoll();
+    duPollTimer = setInterval(duFetchRun, 1500);
+    duFetchRun();
+  }
+
+  function duReset() {
+    duStopPoll();
+    duBusy = false;
+    duShowRun(false);
+    document.getElementById("du_error").textContent = "";
+    document.getElementById("du_photostate").textContent = "";
+    document.getElementById("du_tracking").value = "";
+    document.getElementById("du_rep").value = "";
+    DU_QTY.forEach(function (f) { document.getElementById("du_q_" + f.key).value = ""; });
+    var ph = document.getElementById("du_photo");
+    if (ph) ph.value = "";
+    var sub = document.getElementById("du_submit");
+    if (sub) sub.disabled = !duLive;
+  }
+
+  function duSubmit() {
+    var err = document.getElementById("du_error");
+    err.textContent = "";
+    var tracking = document.getElementById("du_tracking").value.trim();
+    var rep = document.getElementById("du_rep").value.replace(/\s+/g, " ").trim();
+    if (!/^\d{12}$/.test(tracking)) { err.textContent = "Tracking number should be exactly 12 digits."; return; }
+    if (rep.indexOf(" ") < 0) { err.textContent = "Enter the rep’s first and last name."; return; }
+    var quantities = {}, total = 0, bad = false;
+    DU_QTY.forEach(function (f) {
+      var v = document.getElementById("du_q_" + f.key).value.trim();
+      var n = v === "" ? 0 : Number(v);
+      if (isNaN(n) || n < 0) bad = true;
+      quantities[f.key] = n;
+      total += n;
+    });
+    if (bad) { err.textContent = "Quantities must be plain numbers."; return; }
+    if (!total) { err.textContent = "Enter at least one quantity."; return; }
+    duBusy = true;
+    document.getElementById("du_submit").disabled = true;
+    fetch(KK_SERVICE + "/api/kairuku/demo-units/run", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        trackingNumber: tracking,
+        repName: rep,
+        quantities: quantities,
+        dryRun: document.getElementById("du_dry").checked
+      })
+    })
+      .then(function (r) { return r.json().then(function (b) { return { ok: r.ok, body: b }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          duBusy = false;
+          document.getElementById("du_submit").disabled = !duLive;
+          err.textContent = (res.body && res.body.error) || "Couldn’t start the run.";
+          return;
+        }
+        duEnterRunning();
       })
       .catch(function () {
-        var st = document.getElementById("du_state");
-        if (!st) return;
-        st.textContent = "The local app isn’t running.";
-        document.getElementById("du_open").style.display = "none";
-        document.getElementById("du_sheet").style.display = "none";
-        document.getElementById("du_help").style.display = "";
+        duBusy = false;
+        document.getElementById("du_submit").disabled = !duLive;
+        err.textContent = "Couldn’t reach the local service — is Start Abyrx Tools running?";
       });
+  }
+
+  function duPhoto(file) {
+    var state = document.getElementById("du_photostate");
+    state.textContent = "Reading the photo — up to a minute…";
+    var reader = new FileReader();
+    reader.onload = function () {
+      fetch(KK_SERVICE + "/api/kairuku/demo-units/extract", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageBase64: String(reader.result) })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (ex) {
+          if (!ex || ex.error) { state.textContent = (ex && ex.error) || "Extraction failed."; return; }
+          if (ex.trackingNumber) document.getElementById("du_tracking").value = ex.trackingNumber;
+          if (ex.repName) document.getElementById("du_rep").value = ex.repName;
+          DU_QTY.forEach(function (f) {
+            var v = ex.quantities && ex.quantities[f.key];
+            if (typeof v === "number") document.getElementById("du_q_" + f.key).value = String(v);
+          });
+          state.textContent = ex.reader === "claude"
+            ? "Read by Claude vision — double-check, then Submit."
+            : (ex.readerNote || "Done — double-check, then Submit.");
+        })
+        .catch(function () { state.textContent = "Couldn’t reach the local service."; });
+    };
+    reader.onerror = function () { state.textContent = "Couldn’t read the photo."; };
+    reader.readAsDataURL(file);
+  }
+
+  function duCapture() {
+    var box = document.getElementById("du_capbox");
+    box.style.display = "";
+    box.value = "Capturing…";
+    fetch(KK_SERVICE + "/api/kairuku/inspect", { method: "POST" })
+      .then(function (r) { return r.json(); })
+      .then(function (b) { box.value = (b && (b.pageInfo || b.error)) || "Couldn’t capture the page."; })
+      .catch(function () { box.value = "Couldn’t capture the page — is the local service running?"; });
   }
 
   function render() {
@@ -975,9 +1224,26 @@
     }
     // Poll the local session service only while a Kairuku-backed tab shows.
     if (kkTimer) { clearInterval(kkTimer); kkTimer = null; }
+    duStopPoll();
     if (r === "demo-units") {
-      duRefresh();
-      kkTimer = setInterval(duRefresh, 3000);
+      document.getElementById("du_submit").onclick = duSubmit;
+      document.getElementById("du_reset").onclick = duReset;
+      document.getElementById("du_again").onclick = duReset;
+      document.getElementById("du_capture").onclick = duCapture;
+      var duCap = document.getElementById("du_capbox");
+      duCap.onfocus = function () { duCap.select(); };
+      document.getElementById("du_photo").onchange = function (e) {
+        var f = e.target.files && e.target.files[0];
+        if (f) duPhoto(f);
+      };
+      duStatusTick();
+      duOverageRefresh();
+      // A run may already be underway (e.g. this tab was reopened) — resume it.
+      fetch(KK_SERVICE + "/api/kairuku/demo-units/run")
+        .then(function (r2) { return r2.json(); })
+        .then(function (run) { if (run && run.state === "running") duEnterRunning(); })
+        .catch(function () {});
+      kkTimer = setInterval(duStatusTick, 3000);
     }
     if (r === "kairuku-session") {
       document.getElementById("kk_open").onclick = function () { kkAction("/api/kairuku/open-login"); };
