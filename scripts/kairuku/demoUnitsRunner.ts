@@ -265,6 +265,19 @@ async function optionLabels(select: Locator): Promise<string[]> {
 }
 
 /**
+ * Poll a <select> until it has at least `min` options. Kairuku repopulates
+ * the sales-rep dropdown via an AJAX postback after a distributor is chosen;
+ * reading it too early sees an empty (or placeholder-only) list.
+ */
+async function waitForOptionCount(select: Locator, min: number, timeoutMs = 8_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if ((await select.locator("option").count().catch(() => 0)) >= min) return;
+		await select.page().waitForTimeout(250);
+	}
+}
+
+/**
  * Part 1, the real workflow: search the rep's LAST name on the Distributors
  * page and collect the distributor rows that come back. Returns the candidate
  * distributor names (possibly empty = rep isn't in Kairuku at all), or null
@@ -330,55 +343,72 @@ async function searchDistributorsForRep(
  * select, settle, and read. Returns { distributor, repLabel } on a match, or
  * null if no tried distributor lists the rep.
  */
+type FindDistributorResult =
+	| { distributor: string; repLabel: string }
+	| { outcome: "not-eligible" }
+	| { outcome: "rep-not-found"; tried: string[]; lastReps: string[] };
+
 async function findDistributorForRep(
 	page: Page,
 	first: string,
 	last: string,
 	onProgress: (msg: string) => void,
 	candidates?: string[],
-): Promise<{ distributor: string; repLabel: string } | null> {
+): Promise<FindDistributorResult> {
 	const distSelect = page.locator(SEL.distributorSelect).first();
 	await distSelect.waitFor({ state: "visible", timeout: 15_000 });
 	// Skip the placeholder ("- Select a Distributor -") but NOT real names that
 	// merely contain "select" (e.g. "Smith + Nephew (Select Medical Solutions)").
 	const isPlaceholder = (d: string) =>
 		d === "" || /^\s*-+\s*$/.test(d) || /^\s*-?\s*(select|choose|please)/i.test(d);
-	let dists = (await optionLabels(distSelect)).filter((d) => !isPlaceholder(d));
+	// Keep each option's INDEX: options are selected by position, never by
+	// exact label — WebForms pads option text with whitespace, and an exact
+	// label match fails silently on it.
+	const raw = await distSelect.locator("option").allTextContents();
+	let entries = raw
+		.map((t, index) => ({ label: t.trim(), index }))
+		.filter((e) => !isPlaceholder(e.label));
 	if (candidates && candidates.length) {
 		const wanted = candidates.map(norm);
-		dists = dists.filter((d) => {
-			const n = norm(d);
+		entries = entries.filter((e) => {
+			const n = norm(e.label);
 			return wanted.some((w) => w === n || w.includes(n) || n.includes(w));
 		});
-		onProgress(
-			dists.length
-				? `trying ${dists.length} of the demo-eligible distributors…`
-				: "rep's distributor isn't in the demo dropdown",
-		);
-		if (!dists.length) return null;
+		if (!entries.length) return { outcome: "not-eligible" };
+		onProgress(`trying ${entries.length} of the demo-eligible distributors…`);
 	} else {
-		onProgress(`checking ${dists.length} distributors…`);
+		onProgress(`checking ${entries.length} distributors…`);
 	}
-	for (let i = 0; i < dists.length; i++) {
-		const d = dists[i];
+	const tried: string[] = [];
+	let lastReps: string[] = [];
+	for (let i = 0; i < entries.length; i++) {
+		const e = entries[i];
+		tried.push(e.label);
 		try {
-			await distSelect.selectOption({ label: d });
+			await distSelect.selectOption({ index: e.index });
 			await distSelect.dispatchEvent("change").catch(() => {});
 			await settle(page);
 			const repSelect = page.locator(SEL.salesRepSelect).first();
-			if ((await repSelect.count()) === 0) continue;
+			// Placeholder + at least one rep = 2; wait out the AJAX repopulation.
+			await waitForOptionCount(repSelect, 2);
 			const reps = await optionLabels(repSelect);
+			lastReps = reps;
 			const hit = reps.find((r) => matchesLastFirst(r, first, last));
 			if (hit) {
-				onProgress(`found under ${d}`);
-				return { distributor: d, repLabel: hit };
+				onProgress(`found under ${e.label}`);
+				return { distributor: e.label, repLabel: hit };
 			}
 		} catch {
 			// selecting this option failed — move on
 		}
-		if (i % 10 === 9) onProgress(`checked ${i + 1}/${dists.length}…`);
+		if (i % 10 === 9) onProgress(`checked ${i + 1}/${entries.length}…`);
 	}
-	return null;
+	// With search-confirmed candidates, "rep never appeared" is a tool problem
+	// to surface loudly, NOT a workflow outcome. Without candidates (fallback
+	// walk), rep-under-no-distributor keeps the legacy NOT IN k. meaning.
+	return candidates?.length
+		? { outcome: "rep-not-found", tried, lastReps }
+		: { outcome: "not-eligible" };
 }
 
 /** Find a form control (select/input/textarea) by its label text. */
@@ -409,24 +439,26 @@ async function pickOption(
 	select: Locator,
 	wanted: string | RegExp,
 ): Promise<string | null> {
-	const options: string[] = await select
-		.locator("option")
-		.allTextContents()
-		.then((o) => o.map((t) => t.trim()).filter(Boolean));
-	let match: string | undefined;
+	// Track indexes and select by position — exact-label selection fails
+	// silently on the whitespace-padded option text WebForms emits.
+	const raw = await select.locator("option").allTextContents();
+	const entries = raw
+		.map((t, index) => ({ label: t.trim(), index }))
+		.filter((e) => e.label);
+	let match: { label: string; index: number } | undefined;
 	if (wanted instanceof RegExp) {
-		match = options.find((o) => wanted.test(o));
+		match = entries.find((e) => wanted.test(e.label));
 	} else {
 		match =
-			options.find((o) => norm(o) === norm(wanted)) ??
-			options.find((o) => norm(o).includes(norm(wanted))) ??
-			options.find((o) => norm(wanted).includes(norm(o)) && norm(o).length > 3);
+			entries.find((e) => norm(e.label) === norm(wanted)) ??
+			entries.find((e) => norm(e.label).includes(norm(wanted))) ??
+			entries.find((e) => norm(wanted).includes(norm(e.label)) && norm(e.label).length > 3);
 	}
 	if (!match) return null;
-	await select.selectOption({ label: match });
+	await select.selectOption({ index: match.index });
 	// Some forms only react to a real change event.
 	await select.dispatchEvent("change").catch(() => {});
-	return match;
+	return match.label;
 }
 
 /**
@@ -663,7 +695,7 @@ async function run(input: DemoUnitsInput) {
 		// exists but their distributor isn't demo-eligible: that IS the
 		// "NOT IN k." case — log it and stop. ─────────────────────────────────
 		s = step(`Find distributor for ${lastFirst}`);
-		const match = await findDistributorForRep(
+		const found = await findDistributorForRep(
 			page,
 			first,
 			last,
@@ -672,7 +704,21 @@ async function run(input: DemoUnitsInput) {
 			},
 			candidates ?? undefined,
 		);
-		if (!match) {
+		if ("outcome" in found) {
+			if (found.outcome === "rep-not-found") {
+				// The Distributors search proved the rep exists and the dropdown
+				// filter matched their distributor — failing to then find the rep
+				// is a selector/timing problem, so fail loudly with what was seen
+				// instead of quietly writing a wrong "NOT IN k.".
+				throw new Error(
+					`Tried ${found.tried.join(", ")} but "${lastFirst}" never appeared in the sales-rep dropdown ` +
+						`(last read ${found.lastReps.length} options${
+							found.lastReps.length
+								? `, e.g. ${found.lastReps.slice(0, 3).join(" | ")}`
+								: ""
+						}).`,
+				);
+			}
 			if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
 			s.status = "done";
 			s.detail = candidates?.length
@@ -686,8 +732,8 @@ async function run(input: DemoUnitsInput) {
 			);
 			return;
 		}
-		const distributor = match.distributor;
-		const foundRepLabel = match.repLabel;
+		const distributor = found.distributor;
+		const foundRepLabel = found.repLabel;
 		s.status = "done";
 		s.detail = `Distributor: ${distributor} · Rep: ${foundRepLabel}`;
 
@@ -707,14 +753,13 @@ async function run(input: DemoUnitsInput) {
 			await settle(page); // AJAX repopulates the sales-rep dropdown
 
 			const repSelect = page.locator(SEL.salesRepSelect).first();
-			const repOptions = (await repSelect.locator("option").allTextContents()).map((o) =>
-				o.trim(),
-			);
-			const repMatch =
-				repOptions.find((o) => o === foundRepLabel) ??
-				repOptions.find((o) => matchesLastFirst(o, first, last));
-			if (!repMatch) throw new Error(`${lastFirst} isn't in the rep dropdown for ${distMatch}`);
-			await repSelect.selectOption({ label: repMatch });
+			await waitForOptionCount(repSelect, 2); // AJAX repopulation after the distributor pick
+			const rawReps = await repSelect.locator("option").allTextContents();
+			let repIdx = rawReps.findIndex((o) => o.trim() === foundRepLabel);
+			if (repIdx < 0) repIdx = rawReps.findIndex((o) => matchesLastFirst(o.trim(), first, last));
+			if (repIdx < 0) throw new Error(`${lastFirst} isn't in the rep dropdown for ${distMatch}`);
+			const repMatch = rawReps[repIdx].trim();
+			await repSelect.selectOption({ index: repIdx });
 			await repSelect.dispatchEvent("change").catch(() => {});
 			await settle(page);
 			s.status = "done";
