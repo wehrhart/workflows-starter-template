@@ -112,6 +112,8 @@ export interface DemoUnitsRun {
 	screenshot?: string;
 	/** Failure page-HTML path (has the real WebForms control IDs). */
 	htmlDump?: string;
+	/** Copy-pasteable snapshot of the failed page's interactive elements. */
+	pageInfo?: string;
 	/** Folder holding a screenshot of every completed step of this run. */
 	debugDir?: string;
 }
@@ -180,6 +182,52 @@ async function textVisible(page: Page, text: string): Promise<boolean> {
 		.first()
 		.isVisible()
 		.catch(() => false);
+}
+
+/**
+ * Compact, copy-pasteable snapshot of every interactive element on the page
+ * (inputs, selects, buttons, links) with their real IDs/names/labels. Shown
+ * in the app on failure so the user can paste it straight into chat — for a
+ * WebForms app this is exactly what's needed to write a precise selector,
+ * with no file hunting or attachments.
+ */
+async function pageFingerprint(page: Page): Promise<string> {
+	try {
+		return await page.evaluate(() => {
+			const clip = (s: string | null) => (s ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+			const lines: string[] = [];
+			lines.push(`URL: ${location.pathname}`);
+			lines.push(`TITLE: ${document.title}`);
+			const seen = new Set<string>();
+			const push = (l: string) => {
+				if (l && !seen.has(l)) {
+					seen.add(l);
+					lines.push(l);
+				}
+			};
+			for (const el of Array.from(document.querySelectorAll("input,select,textarea"))) {
+				const e = el as HTMLInputElement;
+				if (e.type === "hidden") continue;
+				push(
+					`${e.tagName.toLowerCase()}` +
+						(e.type ? ` type=${e.type}` : "") +
+						(e.id ? ` id=${e.id}` : "") +
+						(e.name ? ` name=${e.name}` : "") +
+						(e.placeholder ? ` ph="${clip(e.placeholder)}"` : "") +
+						(e.getAttribute("aria-label") ? ` aria="${clip(e.getAttribute("aria-label"))}"` : ""),
+				);
+			}
+			for (const el of Array.from(document.querySelectorAll("button,a,input[type=submit],input[type=button]")).slice(0, 40)) {
+				const e = el as HTMLElement;
+				const label = clip(e.innerText || (e as HTMLInputElement).value || "");
+				if (!label) continue;
+				push(`${e.tagName.toLowerCase()} "${label}"` + (e.id ? ` id=${e.id}` : ""));
+			}
+			return lines.join("\n");
+		});
+	} catch {
+		return "(couldn't read the page structure)";
+	}
 }
 
 /**
@@ -620,7 +668,11 @@ async function run(input: DemoUnitsInput) {
 				.replace(/(__VIEWSTATE\w*"\s+value=")[^"]*/g, "$1[redacted]")
 				.replace(/(__EVENTVALIDATION"\s+value=")[^"]*/g, "$1[redacted]");
 			writeFileSync(htmlPath, html);
-			if (currentRun) currentRun.htmlDump = htmlPath;
+			if (currentRun) {
+				currentRun.htmlDump = htmlPath;
+				// Copy-pasteable page structure — the fast path for the user.
+				currentRun.pageInfo = await pageFingerprint(page!);
+			}
 		} catch {
 			// best-effort
 		}

@@ -55,6 +55,7 @@ interface Run {
 	outcome?: string;
 	screenshot?: string;
 	htmlDump?: string;
+	pageInfo?: string;
 	debugDir?: string;
 }
 
@@ -431,18 +432,26 @@ export function DemoUnits() {
 								}`}
 							>
 								{run.outcome ?? (run.state === "completed" ? "Done." : "Something went wrong.")}
-								{run.htmlDump && (
-									<div className="mt-2 text-xs opacity-80">
-										<strong>Best fix:</strong> the exact page was saved to{" "}
-										<span className="font-mono">{run.htmlDump}</span> — send that
-										file to Claude and it can write the precise selector for the
-										step that stopped.
+								{run.pageInfo && (
+									<div className="mt-3">
+										<div className="mb-1 text-xs font-semibold">
+											Copy everything in this box and paste it to Claude — it's
+											the failed page's structure, exactly what's needed to fix
+											the step:
+										</div>
+										<textarea
+											readOnly
+											value={run.pageInfo}
+											onFocus={(e) => e.currentTarget.select()}
+											className="h-40 w-full rounded-lg border border-neutral-300 bg-white p-2 font-mono text-[11px] text-neutral-800 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+										/>
 									</div>
 								)}
-								{run.screenshot && (
-									<div className="mt-2 text-xs opacity-80">
-										A screenshot is also at{" "}
-										<span className="font-mono">{run.screenshot}</span>.
+								{(run.htmlDump || run.screenshot) && (
+									<div className="mt-2 text-xs opacity-70">
+										(Full page + screenshot also saved in{" "}
+										<span className="font-mono">~/.abyrx-kairuku/data/debug/</span>
+										.)
 									</div>
 								)}
 								{run.debugDir && (

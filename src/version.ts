@@ -3,4 +3,4 @@
  * so a user can confirm at a glance which build their downloaded folder is.
  * Keep the label short: a number and the headline change.
  */
-export const APP_VERSION = "v11 · real Kairuku login + HTML capture";
+export const APP_VERSION = "v12 · paste-the-page fixing";
