@@ -55,15 +55,27 @@ Works for either calibration mode:
 - ⚠ Page title/breadcrumb contain "Tracking" — `labelTracking` must stay
   anchored to `/^tracking number/i`.
 
+### RESOLVED (Will's full-window screenshots, 2026-07-13)
+
+- Demo Check page URL confirmed: `beta.kairuku.com/chargesheets.aspx`
+  (`demoPagePath` is correct).
+- Top nav confirmed: DASHBOARD · DISTRIBUTORS & SALES REPS · LOGOUT —
+  `navDashboard` text-match is correct.
+- **UIDs: per Will, the manual workflow never enters UIDs.** The
+  "Entered number of UIDs (0) does not match Units" warning is ignorable;
+  the runner never touches the Demo Unit Information box (and its two SAVE
+  buttons are exactly why `clickMainSave()` exists).
+- **"Continue to Add" DOES create a record**: it lands on
+  `demosheet.aspx?ID=<number>` — a real row ID minted before Save. This is
+  why `cancelOut()` (the page's CANCEL button) is the mandatory back-out in
+  dry-run and on mid-final-page failure, never plain navigation.
+
 ### STILL UNCONFIRMED
 
 | Item | Status |
 |------|--------|
-| `btnOverage` "Request Overage" | no overage case captured yet — text is still the spec's wording |
-| UID requirement | page warns "Entered number of UIDs (0) does not match Units (N)". Does SAVE succeed with 0 UIDs? Does Will's manual workflow enter UIDs here? **Ask Will.** |
-| Does "Continue to Add" create a draft record? | breadcrumb says "Edit …", so possibly. Until confirmed, the runner backs out via the page's CANCEL button (`cancelOut()`) in dry-run and on failure. Confirm by checking the Demo Units list for a stray row after a cancelled walk-through. |
-| Direct URL of the Demo Check page | need an address-bar screenshot to re-confirm `demoPagePath` |
-| Top-level nav / "Dashboard" label | screenshots crop above the sub-tab strip (Tracking Sheets … Inventory Expiry); `goHome()` falls back to `page.goto(KAIRUKU_URL)` so this is low-risk |
+| `btnOverage` "Request Overage" | no overage case captured yet — text is still the spec's wording. Deliberately NOT forcing one on a real rep. If a real overage renders differently, the run's failure box provides the fix in one paste. |
+| CANCEL discards the draft row | assumed (standard semantics); verify after the first cancelled walk-through that no stray row appears in the Demo Units list. |
 
 ## Capture procedure (per page)
 
