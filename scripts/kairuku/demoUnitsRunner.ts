@@ -75,14 +75,13 @@ const SEL = {
 	 * ("Request Overage" is still unconfirmed — no overage case seen yet.)
 	 */
 	btnVerify: "Verify Demo Unit Request",
-	btnOverage: "Request Overage",
 	/**
-	 * The overage control's REAL id, confirmed by a live dry run that
-	 * tripped it (2 Flowable for a rep): after Verify, Kairuku renders
-	 * Button_DemoCheck_RequestApproval instead of CONTINUE TO ADD. Its label
-	 * reads "Request Approval" — the spec calls this "Request Overage".
-	 * NEVER click it.
+	 * Confirmed by Will + live runs: after VERIFY DEMO UNIT REQUEST, Kairuku
+	 * shows EXACTLY ONE of "CONTINUE TO ADD" (normal) or "REQUEST APPROVAL
+	 * FOR OVERAGE" (id Button_DemoCheck_RequestApproval) — the spec's
+	 * "Request Overage". NEVER click the overage button.
 	 */
+	btnOverage: "Request Approval for Overage",
 	btnOverageId: "#Button_DemoCheck_RequestApproval",
 	btnContinue: "Continue to Add",
 	btnSave: "Save",
@@ -297,11 +296,27 @@ async function searchDistributorsForRep(
 	last: string,
 ): Promise<string[] | { unavailable: string }> {
 	try {
-		// Go straight to the Distributors page (accounts.aspx — confirmed URL);
-		// fall back to the top-nav link only if the direct navigation misses.
+		// Go to the Distributors page (accounts.aspx — confirmed URL) and
+		// VERIFY we arrived before touching anything: Kairuku reuses the same
+		// Filter_SearchBy field name on other pages (e.g. UID Tracking Sheets),
+		// so searching without this check types into the wrong page's box and
+		// returns garbage candidates.
 		const url = new URL(SEL.distributorsPagePath, KAIRUKU_URL).toString();
 		await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => {});
 		await settle(page);
+		if (!page.url().includes(SEL.distributorsPagePath)) {
+			// Direct navigation missed — try the top-nav link, then re-verify.
+			const nav = page.getByRole("link", { name: /distributors/i }).first();
+			if (await nav.isVisible().catch(() => false)) {
+				await nav.click().catch(() => {});
+				await settle(page);
+			}
+			if (!page.url().includes(SEL.distributorsPagePath)) {
+				return {
+					unavailable: `couldn't reach the Distributors page (stuck on ${new URL(page.url()).pathname})`,
+				};
+			}
+		}
 		// The search box: try the known Filter ID, then any VISIBLE text-ish
 		// input, WAITING for it to render (the first text input in the DOM is
 		// often a hidden WebForms field, and inputs without a type attribute
@@ -811,12 +826,20 @@ async function run(input: DemoUnitsInput) {
 					.first()
 					.isVisible()
 					.catch(() => false));
+			// CONTINUE first: the live overage case (Flowable, 2026-07-13) had NO
+			// Continue button at all, while the normal case can show REQUEST
+			// APPROVAL alongside Continue — checking overage first misread every
+			// normal entry as an overage.
 			let verdict: "overage" | "continue" | null = null;
 			const verdictDeadline = Date.now() + 10_000;
 			while (!verdict && Date.now() < verdictDeadline) {
-				if (await overageVisible()) verdict = "overage";
-				else if (await continueVisible()) verdict = "continue";
-				else await page.waitForTimeout(250);
+				if (await continueVisible()) verdict = "continue";
+				else if (await overageVisible()) {
+					// Grace beat: give a slow-rendering Continue one more second
+					// before committing to the overage verdict.
+					await page.waitForTimeout(1_000);
+					verdict = (await continueVisible()) ? "continue" : "overage";
+				} else await page.waitForTimeout(250);
 			}
 			if (verdict === "overage") {
 				if (!input.dryRun) addOverageRow(input.repName, entry.product.toLowerCase());
