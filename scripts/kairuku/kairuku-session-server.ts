@@ -37,6 +37,11 @@ import { getDemoUnitsRun, startDemoUnitsRun } from "./demoUnitsRunner.ts";
 import type { DemoUnitsInput } from "./demoUnitsRunner.ts";
 import { extractShippingSheet } from "./extractShippingSheet.ts";
 import { buildOverageXlsx, getOverageRows } from "./overageSheet.ts";
+import { APP_VERSION } from "../../src/version.ts";
+
+/** Status responses carry the service's build version so the app can detect
+ * a stale service process left over from an older folder. */
+const versioned = <T extends object>(r: T) => ({ ...r, version: APP_VERSION });
 
 const PORT = Number(process.env.KAIRUKU_SESSION_PORT ?? 5281);
 const HOST = "127.0.0.1";
@@ -88,13 +93,13 @@ const server = createServer(async (req, res) => {
 	try {
 		switch (route) {
 			case "GET /api/kairuku/status":
-				return sendJson(res, 200, getKairukuStatus());
+				return sendJson(res, 200, versioned(getKairukuStatus()));
 			case "POST /api/kairuku/open-login":
-				return sendJson(res, 200, await openKairukuLoginWindow());
+				return sendJson(res, 200, versioned(await openKairukuLoginWindow()));
 			case "POST /api/kairuku/check":
-				return sendJson(res, 200, await checkKairukuSessionStatus());
+				return sendJson(res, 200, versioned(await checkKairukuSessionStatus()));
 			case "POST /api/kairuku/close":
-				return sendJson(res, 200, await closeKairukuBrowser());
+				return sendJson(res, 200, versioned(await closeKairukuBrowser()));
 
 			case "POST /api/kairuku/demo-units/extract": {
 				const body = await readJson(req);

@@ -47,6 +47,14 @@ if [ ! -f .abyrx-setup-complete ]; then
 	touch .abyrx-setup-complete
 fi
 
+# Stop any older copies still running from a previous folder or session — a
+# stale background service holding port 5281 would keep serving OLD behavior
+# to a NEW app, which is impossible to debug from the outside.
+for port in 5280 5281; do
+	lsof -ti tcp:$port 2>/dev/null | xargs kill 2>/dev/null || true
+done
+sleep 1
+
 echo "Starting the Kairuku session service…"
 npm run kairuku:session &
 KAIRUKU_PID=$!

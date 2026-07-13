@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { APP_VERSION } from "../version";
 
 /**
  * Kairuku Session tool — the login/session foundation for future Kairuku
@@ -30,6 +31,8 @@ type ServiceStatus =
 interface StatusReport {
 	status: ServiceStatus;
 	detail: string;
+	/** The background service's build version — flags stale service processes. */
+	version?: string;
 }
 
 const STATUS_META: Record<
@@ -83,6 +86,7 @@ async function callService(
 	return {
 		status: body.status,
 		detail: body.error ?? body.detail ?? "",
+		version: body.version,
 	};
 }
 
@@ -150,6 +154,18 @@ export function KairukuSession() {
 				password and MFA code are typed by you, in the browser window — the app
 				never sees or stores them.
 			</p>
+
+			{/* Stale-service guard: a service process left over from an older
+			    folder keeps serving OLD behavior to a NEW app. Flag it loudly. */}
+			{!offline && report.version !== APP_VERSION && (
+				<div className="mb-4 rounded-2xl border border-red-300 bg-red-50 p-5 text-sm text-red-800 shadow-sm dark:border-red-900 dark:bg-red-950/60 dark:text-red-300">
+					<strong>Version mismatch.</strong> The background service is running an
+					older version ({report.version ?? "pre-v8"}) than this app (
+					{APP_VERSION}). Close every Abyrx window and Terminal, then
+					double-click <strong>Start Abyrx Tools</strong> once — it now shuts
+					down stale copies automatically.
+				</div>
+			)}
 
 			{/* Status card */}
 			<div className="rounded-2xl border border-neutral-200 bg-white/80 p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/70">
