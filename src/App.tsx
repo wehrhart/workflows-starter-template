@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BackgroundDots } from "./components/BackgroundDots";
 import { TOOLS, getTool } from "./tools/registry";
 import type { ToolDef } from "./tools/registry";
+import { APP_VERSION } from "./version";
 
 const WORKSPACE_NAME = "Abyrx Tools";
 
@@ -141,6 +142,9 @@ function App() {
 						/>
 					))}
 				</nav>
+				<div className="mt-auto px-1 pt-6 text-[11px] text-neutral-400 dark:text-neutral-600">
+					{APP_VERSION}
+				</div>
 			</aside>
 
 			{/* Main */}
