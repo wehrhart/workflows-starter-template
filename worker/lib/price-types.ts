@@ -52,6 +52,8 @@ export interface SisterFacility {
 	city: string;
 	state: string;
 	approvedCount: number;
+	/** That sister's own approved products (for the per-sister drill-down). */
+	approved: ApprovedProduct[];
 }
 
 /** Result of a price lookup for one facility code. */
