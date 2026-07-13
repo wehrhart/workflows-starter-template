@@ -32,6 +32,9 @@ worker-configuration.d.ts
 .env*
 !.env.example
 
+# Written by Start Abyrx Tools after a successful first-time setup
+.abyrx-setup-complete
+
 # Kairuku local browser session — holds the logged-in cookies. NEVER commit.
 .kairuku-browser-profile/
 # Kairuku tool data: overage sheet, OCR cache, debug screenshots

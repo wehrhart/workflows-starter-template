@@ -23,10 +23,28 @@ if ! command -v npm >/dev/null 2>&1; then
 	exit 1
 fi
 
-if [ ! -d node_modules ]; then
+# Setup is only considered done when the marker file exists — a half-finished
+# install (e.g. wifi dropped mid-download) is retried in full next time.
+if [ ! -f .abyrx-setup-complete ]; then
 	echo "First-time setup: installing packages (a few minutes)…"
-	npm install
-	npx playwright install chromium
+	setup_ok=0
+	for attempt in 1 2 3; do
+		if npm install && npx playwright install chromium; then
+			setup_ok=1
+			break
+		fi
+		echo ""
+		echo "The download hiccupped (attempt $attempt of 3) — retrying in 10 seconds…"
+		sleep 10
+	done
+	if [ "$setup_ok" != 1 ]; then
+		echo ""
+		echo "Setup couldn't finish. This is almost always a network hiccup:"
+		echo "check your wifi, turn off any VPN, then double-click 'Start Abyrx Tools' again."
+		read -n 1 -s -r -p "Press any key to close this window…"
+		exit 1
+	fi
+	touch .abyrx-setup-complete
 fi
 
 echo "Starting the Kairuku session service…"
