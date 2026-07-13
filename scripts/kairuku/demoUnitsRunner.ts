@@ -272,28 +272,48 @@ async function optionLabels(select: Locator): Promise<string[]> {
 async function searchDistributorsForRep(
 	page: Page,
 	last: string,
-): Promise<string[] | null> {
+): Promise<string[] | { unavailable: string }> {
 	try {
-		await clickText(page, SEL.navDistributors);
+		let nav = page.getByRole("link", { name: /distributors/i }).first();
+		if (!(await nav.isVisible().catch(() => false))) {
+			// Top nav might not be on the current screen — go home and retry.
+			await goHome(page);
+			nav = page.getByRole("link", { name: /distributors/i }).first();
+			if (!(await nav.isVisible().catch(() => false))) {
+				return { unavailable: "no Distributors link in the top nav" };
+			}
+		}
+		await nav.click();
 		await settle(page);
+		// The search box: try the known Filter ID, then any VISIBLE text input
+		// (the first text input in the DOM is often a hidden WebForms field).
 		let input = page.locator(SEL.searchInput).first();
 		if (!(await input.isVisible().catch(() => false))) {
-			// Tolerant fallback: the page's search box sits by a "Search Text"
-			// label; when the ID differs, take the first visible text input.
-			input = page.locator('input[type="text"]').first();
-			if (!(await input.isVisible().catch(() => false))) return null;
+			input = page.locator('input[type="text"]:visible').first();
+			if ((await input.count()) === 0) {
+				return { unavailable: "no visible search box on the Distributors page" };
+			}
 		}
 		await input.fill(last);
 		const btn = page.locator(SEL.searchButton).first();
-		if (await btn.isVisible().catch(() => false)) await btn.click();
-		else await clickText(page, "Search");
+		if (await btn.isVisible().catch(() => false)) {
+			await btn.click();
+		} else {
+			const byName = page.getByRole("button", { name: /^search$/i }).first();
+			if (!(await byName.isVisible().catch(() => false))) {
+				return { unavailable: "no SEARCH button on the Distributors page" };
+			}
+			await byName.click();
+		}
 		await settle(page);
 		const names = (await page.locator(SEL.distributorLink).allTextContents())
 			.map((t) => t.trim())
 			.filter(Boolean);
 		return [...new Set(names)];
-	} catch {
-		return null;
+	} catch (err) {
+		return {
+			unavailable: err instanceof Error ? err.message.split("\n")[0] : "unknown error",
+		};
 	}
 }
 
@@ -602,10 +622,11 @@ async function run(input: DemoUnitsInput) {
 		// employ someone by that name. 0 records → the rep isn't in Kairuku:
 		// log "NOT IN k." and stop. ────────────────────────────────────────────
 		s = step(`Search Distributors for "${last}"`);
-		const candidates = await searchDistributorsForRep(page, last);
+		const searched = await searchDistributorsForRep(page, last);
+		const candidates = Array.isArray(searched) ? searched : null;
 		if (candidates === null) {
 			s.status = "done";
-			s.detail = "search unavailable — will walk the demo dropdown instead";
+			s.detail = `search unavailable (${(searched as { unavailable: string }).unavailable}) — will walk the demo dropdown instead`;
 		} else if (candidates.length === 0) {
 			if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
 			s.status = "done";
