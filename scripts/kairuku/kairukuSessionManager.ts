@@ -204,12 +204,38 @@ async function isAuthenticated(page: Page): Promise<boolean> {
 		if (!url.startsWith("http")) return false;
 		if (AUTH_URL_HINTS.test(url)) return false;
 
+		// Any credential-ish input visible → still logging in. Cast a wide net:
+		// Kairuku's 6-digit screen (like many) uses plain text/tel boxes, so also
+		// match short-maxlength digit inputs and anything named/id'd like a code.
 		const authField = page
 			.locator(
-				'input[type="password"], input[autocomplete="one-time-code"], input[name*="otp" i], input[name*="code" i][inputmode="numeric"]',
+				[
+					'input[type="password"]',
+					'input[autocomplete="one-time-code"]',
+					'input[name*="otp" i], input[id*="otp" i]',
+					'input[name*="code" i], input[id*="code" i], input[placeholder*="code" i]',
+					'input[name*="token" i], input[id*="token" i]',
+					'input[inputmode="numeric"][maxlength]',
+					'input[type="tel"][maxlength]',
+					'input[maxlength="1"], input[maxlength="4"], input[maxlength="6"], input[maxlength="8"]',
+				].join(", "),
 			)
 			.first();
 		if (await authField.isVisible().catch(() => false)) return false;
+
+		// MFA/verification screens say so in words even when their inputs look
+		// generic — if the page is talking about codes, we are NOT logged in.
+		const bodyText = await page
+			.locator("body")
+			.innerText({ timeout: 3_000 })
+			.catch(() => "");
+		if (
+			/verification code|security code|one[\s-]?time (code|passcode|password)|\b\d[\s-]?digit code\b|enter (the |your )?code|code (was |we )?(sent|texted)|sent (you )?a (code|text)|two[\s-]?step|authenticator|remember this (device|browser)/i.test(
+				bodyText,
+			)
+		) {
+			return false;
+		}
 
 		// Require a real, rendered page (not blank/error) before declaring live.
 		const hasContent = await page
@@ -286,9 +312,17 @@ export async function openKairukuLoginWindow(): Promise<KairukuStatusReport> {
 			if (!p) continue;
 			if (await isAuthenticated(p)) {
 				setStatus("checking", "Login detected — confirming…");
-				await sleep(1_500); // let any post-login redirect settle
+				// Confirm the logged-in state HOLDS (two more checks, 4s apart)
+				// before closing — a brief between-screens moment must not close
+				// the window while the user is mid-login/MFA.
+				await sleep(4_000);
+				const midPage = currentPage(ctx);
+				const midOk =
+					activeContext === ctx && midPage && (await isAuthenticated(midPage));
+				await sleep(4_000);
 				const confirmPage = currentPage(ctx);
 				if (
+					midOk &&
 					activeContext === ctx &&
 					confirmPage &&
 					(await isAuthenticated(confirmPage))
