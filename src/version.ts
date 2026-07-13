@@ -3,4 +3,4 @@
  * so a user can confirm at a glance which build their downloaded folder is.
  * Keep the label short: a number and the headline change.
  */
-export const APP_VERSION = "v16 · Demo Units runs from the artifact";
+export const APP_VERSION = "v17 · Demo Units clicks its sub-tab";

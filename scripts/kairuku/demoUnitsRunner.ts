@@ -396,10 +396,25 @@ async function goHome(page: Page) {
 	await settle(page);
 }
 
-/** Navigate straight to the Demo Check page (chargesheets.aspx). */
+/**
+ * Navigate to the Demo Check widget. chargesheets.aspx opens on its DEFAULT
+ * sub-tab (Tracking Sheets), where the Demo Check controls exist in the DOM
+ * but are hidden — confirmed by a live run's page fingerprint. The "Demo
+ * Units" sub-tab link must be clicked to reveal them; existence checks alone
+ * pass on the wrong tab, so callers must check visibility.
+ */
 async function gotoDemoPage(page: Page) {
 	const url = new URL(SEL.demoPagePath, KAIRUKU_URL).toString();
 	await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => {});
+	await settle(page);
+	const dist = page.locator(SEL.distributorSelect).first();
+	if (await dist.isVisible().catch(() => false)) return;
+	await page
+		.getByRole("link", { name: "Demo Units" })
+		.first()
+		.click()
+		.catch(() => {});
+	await settle(page);
 }
 
 // ---------------------------------------------------------------------------
@@ -521,12 +536,13 @@ async function run(input: DemoUnitsInput) {
 		}
 
 		// ── Open the Demo Check page (UID Tracking → chargesheets.aspx) ───────
-		s = step("Open UID Tracking (Demo Units)");
+		s = step("Open the Demo Units tab");
 		await gotoDemoPage(page);
-		await settle(page);
-		if ((await page.locator(SEL.distributorSelect).count()) === 0) {
+		// Visibility, not existence: the controls are in the DOM on every
+		// sub-tab of chargesheets.aspx, but only usable on the Demo Units tab.
+		if (!(await page.locator(SEL.distributorSelect).first().isVisible().catch(() => false))) {
 			throw new Error(
-				"Couldn't find the Demo Check distributor dropdown on the UID Tracking page.",
+				"Couldn't open the Demo Units sub-tab — the distributor dropdown never became visible.",
 			);
 		}
 		s.status = "done";
