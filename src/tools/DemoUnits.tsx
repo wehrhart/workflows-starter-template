@@ -80,6 +80,7 @@ export function DemoUnits() {
 	const [tracking, setTracking] = useState("");
 	const [repName, setRepName] = useState("");
 	const [qty, setQty] = useState<Quantities>(EMPTY_QTY);
+	const [dryRun, setDryRun] = useState(false);
 
 	const [run, setRun] = useState<Run>({ state: "none" });
 	const [overage, setOverage] = useState<OverageRow[]>([]);
@@ -205,6 +206,7 @@ export function DemoUnits() {
 					trackingNumber: tracking.trim(),
 					repName: repName.trim(),
 					quantities,
+					dryRun,
 				}),
 			});
 			setRun(r);
@@ -357,9 +359,22 @@ export function DemoUnits() {
 							))}
 						</div>
 					</div>
-					<div className="mt-5 flex flex-wrap gap-3">
+					<label className="mt-5 flex items-start gap-2 text-sm text-neutral-600 dark:text-neutral-300">
+						<input
+							type="checkbox"
+							checked={dryRun}
+							onChange={(e) => setDryRun(e.target.checked)}
+							className="mt-0.5"
+						/>
+						<span>
+							<strong>Dry run</strong> — walk every Kairuku step and fill every
+							field, but stop right before Save. Nothing is entered, nothing is
+							logged. Use this to test safely.
+						</span>
+					</label>
+					<div className="mt-4 flex flex-wrap gap-3">
 						<button onClick={() => void submit()} disabled={!kairukuLive} className={primaryBtn}>
-							Submit — enter in Kairuku
+							{dryRun ? "Dry run — don't save" : "Submit — enter in Kairuku"}
 						</button>
 						<button onClick={reset} className={ghostBtn}>
 							Start over

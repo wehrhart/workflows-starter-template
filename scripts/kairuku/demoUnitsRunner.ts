@@ -86,6 +86,12 @@ export interface DemoUnitsInput {
 	trackingNumber: string;
 	repName: string; // "First Last", as written on the shipping sheet
 	quantities: DemoUnitsQuantities;
+	/**
+	 * Dry run: walk every step and fill every field, but STOP right before
+	 * clicking Save (and don't write to the real Overage reps sheet), then back
+	 * out via Dashboard. Nothing is entered into Kairuku. For safe testing.
+	 */
+	dryRun?: boolean;
 }
 
 export interface RunStep {
@@ -390,12 +396,16 @@ async function run(input: DemoUnitsInput) {
 
 		let distributor: string | null = null;
 		if (results.length === 0) {
-			addOverageRow(input.repName, "NOT IN k.");
+			if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
 			s.status = "done";
 			s.detail = `No Distributors search results for "${last}"`;
 			await goHome(page);
 			await finish(
-				`${input.repName} not found in Kairuku — logged on the Overage reps sheet as "NOT IN k.". No entry made.`,
+				`${input.repName} not found in Kairuku — ${
+					input.dryRun
+						? 'DRY RUN: would be logged as "NOT IN k."'
+						: 'logged on the Overage reps sheet as "NOT IN k."'
+				}. No entry made.`,
 			);
 			return;
 		}
@@ -421,7 +431,7 @@ async function run(input: DemoUnitsInput) {
 				await settle(page);
 			}
 			if (!distributor) {
-				addOverageRow(input.repName, "NOT IN k.");
+				if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
 				s.status = "done";
 				s.detail = `${results.length} distributors matched "${last}" but none listed ${lastFirst}`;
 				await goHome(page);
@@ -492,7 +502,7 @@ async function run(input: DemoUnitsInput) {
 
 			// ── Part 3: overage vs continue ──
 			if (await textVisible(page, SEL.btnOverage)) {
-				addOverageRow(input.repName, entry.product.toLowerCase());
+				if (!input.dryRun) addOverageRow(input.repName, entry.product.toLowerCase());
 				s = step(`${entry.product}: overage — logged, skipping this entry`);
 				s.status = "done";
 				overages.push(entry.product);
@@ -517,6 +527,14 @@ async function run(input: DemoUnitsInput) {
 				// Fall back to the page's first checkbox (the form has one).
 				await page.getByRole("checkbox").first().check();
 			}
+			if (input.dryRun) {
+				await snap(`${entry.product}-dry-run-final-form`);
+				s.status = "done";
+				s.detail = "DRY RUN — every field filled, stopped before Save";
+				saved.push(`${entry.product} (${entry.qty}) — dry run, NOT saved`);
+				await goHome(page); // backs out; nothing is half-entered (Dashboard resets the form)
+				continue;
+			}
 			await clickText(page, SEL.btnSave);
 			await settle(page);
 			saved.push(`${entry.product} (${entry.qty})`);
@@ -524,9 +542,12 @@ async function run(input: DemoUnitsInput) {
 		}
 
 		const bits: string[] = [];
-		if (saved.length) bits.push(`Saved: ${saved.join(" and ")}`);
+		if (input.dryRun) bits.push("DRY RUN — nothing was saved into Kairuku");
+		if (saved.length) bits.push(`${input.dryRun ? "Walked through" : "Saved"}: ${saved.join(" and ")}`);
 		if (overages.length)
-			bits.push(`Overage logged for: ${overages.join(" and ")} (on the Overage reps sheet)`);
+			bits.push(
+				`Overage ${input.dryRun ? "detected (dry run — not logged)" : "logged"} for: ${overages.join(" and ")}`,
+			);
 		await goHome(page);
 		await finish(`${bits.join(". ")}. Tracking ${input.trackingNumber} for ${input.repName}.`);
 	} catch (err) {
