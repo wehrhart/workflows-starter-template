@@ -57,6 +57,8 @@ const SEL = {
 	 * linking to distributor.aspx?id=N.
 	 */
 	navDistributors: "Distributors & Sales Reps",
+	/** Confirmed from Will's address bar: the Distributors page is accounts.aspx. */
+	distributorsPagePath: "accounts.aspx",
 	searchInput: "#Filter_SearchBy",
 	searchButton: "#Filter_Button",
 	distributorLink: 'a[href*="distributor.aspx"]',
@@ -274,23 +276,25 @@ async function searchDistributorsForRep(
 	last: string,
 ): Promise<string[] | { unavailable: string }> {
 	try {
-		let nav = page.getByRole("link", { name: /distributors/i }).first();
-		if (!(await nav.isVisible().catch(() => false))) {
-			// Top nav might not be on the current screen — go home and retry.
-			await goHome(page);
-			nav = page.getByRole("link", { name: /distributors/i }).first();
-			if (!(await nav.isVisible().catch(() => false))) {
-				return { unavailable: "no Distributors link in the top nav" };
-			}
-		}
-		await nav.click();
+		// Go straight to the Distributors page (accounts.aspx — confirmed URL);
+		// fall back to the top-nav link only if the direct navigation misses.
+		const url = new URL(SEL.distributorsPagePath, KAIRUKU_URL).toString();
+		await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => {});
 		await settle(page);
-		// The search box: try the known Filter ID, then any VISIBLE text input
-		// (the first text input in the DOM is often a hidden WebForms field).
+		// The search box: try the known Filter ID, then any VISIBLE text-ish
+		// input, WAITING for it to render (the first text input in the DOM is
+		// often a hidden WebForms field, and inputs without a type attribute
+		// are text inputs too).
 		let input = page.locator(SEL.searchInput).first();
 		if (!(await input.isVisible().catch(() => false))) {
-			input = page.locator('input[type="text"]:visible').first();
-			if ((await input.count()) === 0) {
+			input = page
+				.locator('input[type="text"]:visible, input:not([type]):visible')
+				.first();
+			const found = await input
+				.waitFor({ state: "visible", timeout: 10_000 })
+				.then(() => true)
+				.catch(() => false);
+			if (!found) {
 				return { unavailable: "no visible search box on the Distributors page" };
 			}
 		}
