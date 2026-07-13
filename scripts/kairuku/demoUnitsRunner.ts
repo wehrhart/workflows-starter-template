@@ -180,6 +180,48 @@ async function textVisible(page: Page, text: string): Promise<boolean> {
 		.catch(() => false);
 }
 
+/**
+ * Type into a search/text box, tolerantly. The real Kairuku search field may
+ * be a plain text input, a search input, a role=searchbox, or wrapped so its
+ * placeholder/name differ from the guess — so try the configured selector
+ * first, then fall back to the first visible text-like input on the page.
+ * Types character-by-character (some search widgets ignore a bulk fill) and
+ * submits with Enter.
+ */
+async function fillSearch(page: Page, value: string): Promise<boolean> {
+	const selectors = [
+		SEL.distributorSearch,
+		'input[type="search"]',
+		'[role="searchbox"]',
+		'input[placeholder*="search" i]',
+		'input[aria-label*="search" i]',
+		'input[name*="search" i]',
+		'input[id*="search" i]',
+		'input[type="text"]',
+		"input:not([type])",
+		'input[type="email"]',
+		'[contenteditable="true"]',
+	];
+	for (const sel of selectors) {
+		const box = page.locator(sel).first();
+		try {
+			await box.waitFor({ state: "visible", timeout: 2_500 });
+		} catch {
+			continue;
+		}
+		try {
+			await box.click({ timeout: 2_000 });
+			await box.fill("").catch(() => {});
+			await box.pressSequentially(value, { delay: 40 });
+			await box.press("Enter").catch(() => {});
+			return true;
+		} catch {
+			// try the next selector
+		}
+	}
+	return false;
+}
+
 /** Find a form control (select/input/textarea) by its label text. */
 async function labeledControl(page: Page, label: RegExp, kinds: string): Promise<Locator> {
 	// 1) proper <label> association
@@ -373,9 +415,11 @@ async function run(input: DemoUnitsInput) {
 		await goHome(page);
 		await clickText(page, SEL.navDistributors);
 		await settle(page);
-		const search = page.locator(SEL.distributorSearch).first();
-		await search.fill(last);
-		await search.press("Enter");
+		if (!(await fillSearch(page, last))) {
+			throw new Error(
+				"Couldn't find the Distributors search box — send the failure screenshot so the selector can be set to the real one.",
+			);
+		}
 		await settle(page);
 
 		// Result rows: links that aren't the top-nav items.
