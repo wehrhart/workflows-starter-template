@@ -165,7 +165,13 @@ export function DemoUnits() {
 			setQty(next);
 			setStage("review");
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Extraction failed");
+			setError(
+				err instanceof TypeError
+					? "Couldn't reach the local session service. Close everything and double-click Start Abyrx Tools — it starts the app and the service together."
+					: err instanceof Error
+						? err.message
+						: "Extraction failed",
+			);
 			setStage("upload");
 		}
 	};
@@ -286,7 +292,7 @@ export function DemoUnits() {
 					<input
 						ref={fileRef}
 						type="file"
-						accept="image/*"
+						accept="image/*,.heic,.heif"
 						disabled={stage === "extracting" || !serviceOnline}
 						onChange={(e) => {
 							const f = e.target.files?.[0];
@@ -296,7 +302,9 @@ export function DemoUnits() {
 					/>
 					{stage === "extracting" && (
 						<p className="mt-3 text-sm text-neutral-500 dark:text-neutral-400">
-							Reading the sheet… (first ever run downloads the reader, ~15s)
+							Reading the sheet — up to a minute. The tracking number is only
+							auto-filled when it passes the FedEx check digit; anything the
+							reader isn't sure of is left blank for you to type.
 						</p>
 					)}
 				</div>
