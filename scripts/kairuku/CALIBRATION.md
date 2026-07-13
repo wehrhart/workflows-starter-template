@@ -70,6 +70,19 @@ Works for either calibration mode:
   why `cancelOut()` (the page's CANCEL button) is the mandatory back-out in
   dry-run and on mid-final-page failure, never plain navigation.
 
+### Part 1 semantics (confirmed with Will + live screenshots, 2026-07-13)
+
+- The top-nav **Distributors** page's search box matches professionals'
+  names: searching a rep's LAST name returns the distributor(s) employing
+  someone by that name, as rows linking to `distributor.aspx?id=N`
+  (live: "Dickey" → Record Count 1, DePuy Synthes Trauma).
+- The runner searches first, then tries only those candidates in the Demo
+  Check dropdown (fallback when the search UI can't be driven: walk all ~24).
+- **"NOT IN k." (logged on the overage sheet) covers BOTH**: 0 search
+  records (rep isn't in Kairuku), and rep found but their distributor isn't
+  in the demo-eligible dropdown. Per Will — do not "fix" this into a
+  nothing-logged outcome.
+
 ### STILL UNCONFIRMED
 
 | Item | Status |

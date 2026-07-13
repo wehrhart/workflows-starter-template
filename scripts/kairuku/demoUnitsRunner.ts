@@ -50,6 +50,16 @@ const SEL = {
 	demoPagePath: "chargesheets.aspx",
 	navUidTracking: "UID Tracking",
 	navDashboard: "Dashboard",
+	/**
+	 * Part 1 search (confirmed live): the top-nav Distributors page's search
+	 * box matches professionals' names too — searching a rep's LAST name
+	 * returns the distributor(s) employing someone by that name, as rows
+	 * linking to distributor.aspx?id=N.
+	 */
+	navDistributors: "Distributors & Sales Reps",
+	searchInput: "#Filter_SearchBy",
+	searchButton: "#Filter_Button",
+	distributorLink: 'a[href*="distributor.aspx"]',
 	/** Demo Check controls (real IDs). */
 	distributorSelect: "#DistributorID_DemoCheck",
 	salesRepSelect: "#SalesRepID_DemoCheck",
@@ -253,18 +263,55 @@ async function optionLabels(select: Locator): Promise<string[]> {
 }
 
 /**
- * Walk the distributor dropdown to find the one whose sales-rep dropdown
- * lists this rep — the real-Kairuku equivalent of the spec's "search
- * distributors for the rep". Selecting a distributor triggers an ASP.NET
- * postback that repopulates the rep dropdown, so we select, settle, and read.
- * Returns { distributor, repLabel } on a match, or null if no distributor
- * lists the rep. Skips placeholder options ("-- select --", "All", empty).
+ * Part 1, the real workflow: search the rep's LAST name on the Distributors
+ * page and collect the distributor rows that come back. Returns the candidate
+ * distributor names (possibly empty = rep isn't in Kairuku at all), or null
+ * when the search UI couldn't be driven — the caller then falls back to
+ * walking the whole demo dropdown.
+ */
+async function searchDistributorsForRep(
+	page: Page,
+	last: string,
+): Promise<string[] | null> {
+	try {
+		await clickText(page, SEL.navDistributors);
+		await settle(page);
+		let input = page.locator(SEL.searchInput).first();
+		if (!(await input.isVisible().catch(() => false))) {
+			// Tolerant fallback: the page's search box sits by a "Search Text"
+			// label; when the ID differs, take the first visible text input.
+			input = page.locator('input[type="text"]').first();
+			if (!(await input.isVisible().catch(() => false))) return null;
+		}
+		await input.fill(last);
+		const btn = page.locator(SEL.searchButton).first();
+		if (await btn.isVisible().catch(() => false)) await btn.click();
+		else await clickText(page, "Search");
+		await settle(page);
+		const names = (await page.locator(SEL.distributorLink).allTextContents())
+			.map((t) => t.trim())
+			.filter(Boolean);
+		return [...new Set(names)];
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Find the distributor in the Demo Check dropdown whose sales-rep dropdown
+ * lists this rep. With `candidates` (from the Distributors search) only those
+ * dropdown options are tried — usually one postback instead of ~24. Without
+ * candidates it walks every option (fallback). Selecting a distributor
+ * triggers an ASP.NET postback that repopulates the rep dropdown, so we
+ * select, settle, and read. Returns { distributor, repLabel } on a match, or
+ * null if no tried distributor lists the rep.
  */
 async function findDistributorForRep(
 	page: Page,
 	first: string,
 	last: string,
 	onProgress: (msg: string) => void,
+	candidates?: string[],
 ): Promise<{ distributor: string; repLabel: string } | null> {
 	const distSelect = page.locator(SEL.distributorSelect).first();
 	await distSelect.waitFor({ state: "visible", timeout: 15_000 });
@@ -272,8 +319,22 @@ async function findDistributorForRep(
 	// merely contain "select" (e.g. "Smith + Nephew (Select Medical Solutions)").
 	const isPlaceholder = (d: string) =>
 		d === "" || /^\s*-+\s*$/.test(d) || /^\s*-?\s*(select|choose|please)/i.test(d);
-	const dists = (await optionLabels(distSelect)).filter((d) => !isPlaceholder(d));
-	onProgress(`checking ${dists.length} distributors…`);
+	let dists = (await optionLabels(distSelect)).filter((d) => !isPlaceholder(d));
+	if (candidates && candidates.length) {
+		const wanted = candidates.map(norm);
+		dists = dists.filter((d) => {
+			const n = norm(d);
+			return wanted.some((w) => w === n || w.includes(n) || n.includes(w));
+		});
+		onProgress(
+			dists.length
+				? `trying ${dists.length} of the demo-eligible distributors…`
+				: "rep's distributor isn't in the demo dropdown",
+		);
+		if (!dists.length) return null;
+	} else {
+		onProgress(`checking ${dists.length} distributors…`);
+	}
 	for (let i = 0; i < dists.length; i++) {
 		const d = dists[i];
 		try {
@@ -536,6 +597,31 @@ async function run(input: DemoUnitsInput) {
 		}
 
 		// ── Open the Demo Check page (UID Tracking → chargesheets.aspx) ───────
+		// ── Part 1a: search the rep's last name on the Distributors page. The
+		// search matches professionals, so it returns the distributor(s) that
+		// employ someone by that name. 0 records → the rep isn't in Kairuku:
+		// log "NOT IN k." and stop. ────────────────────────────────────────────
+		s = step(`Search Distributors for "${last}"`);
+		const candidates = await searchDistributorsForRep(page, last);
+		if (candidates === null) {
+			s.status = "done";
+			s.detail = "search unavailable — will walk the demo dropdown instead";
+		} else if (candidates.length === 0) {
+			if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
+			s.status = "done";
+			s.detail = "0 records";
+			await goHome(page);
+			await finish(
+				`${input.repName} isn't in Kairuku — logged "NOT IN k." on the overage sheet. Nothing to enter.${
+					input.dryRun ? " (Dry run — not actually logged.)" : ""
+				}`,
+			);
+			return;
+		} else {
+			s.status = "done";
+			s.detail = candidates.join(" · ");
+		}
+
 		s = step("Open the Demo Units tab");
 		await gotoDemoPage(page);
 		// Visibility, not existence: the controls are in the DOM on every
@@ -547,21 +633,31 @@ async function run(input: DemoUnitsInput) {
 		}
 		s.status = "done";
 
-		// ── Part 1: find the rep's distributor by walking the ~24 demo-eligible
-		// distributors and checking each one's sales-rep dropdown. If the rep
-		// isn't under any of them, their distributor isn't demo-eligible →
-		// task complete (the spec's "not in the dropdown → skip" rule). ──────
+		// ── Part 1b: confirm the rep in the Demo Check dropdown, trying only
+		// the searched candidates (fallback: walk all ~24). No match → the rep
+		// exists but their distributor isn't demo-eligible: that IS the
+		// "NOT IN k." case — log it and stop. ─────────────────────────────────
 		s = step(`Find distributor for ${lastFirst}`);
-		const match = await findDistributorForRep(page, first, last, (m) => {
-			s.detail = m;
-		});
+		const match = await findDistributorForRep(
+			page,
+			first,
+			last,
+			(m) => {
+				s.detail = m;
+			},
+			candidates ?? undefined,
+		);
 		if (!match) {
 			if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
 			s.status = "done";
-			s.detail = `${lastFirst} not under any demo-eligible distributor`;
+			s.detail = candidates?.length
+				? `${candidates.join(" · ")} — not in the demo-eligible dropdown`
+				: `${lastFirst} not under any demo-eligible distributor`;
 			await goHome(page);
 			await finish(
-				`${input.repName}'s distributor isn't in the Demo Units list — no entry needed. Task complete.`,
+				`${input.repName}'s distributor isn't in the Demo Units list — logged "NOT IN k." on the overage sheet. Nothing to enter. Task complete.${
+					input.dryRun ? " (Dry run — not actually logged.)" : ""
+				}`,
 			);
 			return;
 		}
