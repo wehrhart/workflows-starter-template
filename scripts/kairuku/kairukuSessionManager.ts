@@ -483,19 +483,16 @@ export async function getKairukuAuthenticatedPage(): Promise<{
 	}
 
 	if (activeMode === "session" && activeContext) {
-		// Reuse the standing window — bring it home and confirm it's still in.
+		// Reuse the standing window AS-IS. It was already confirmed logged-in
+		// when it was opened, so DON'T re-navigate it or re-run the login
+		// heuristic here — that heuristic doesn't know Kairuku's real
+		// logged-in page and was wrongly closing a perfectly good window.
+		// The caller (e.g. the Demo Units runner) navigates from here itself;
+		// if the session really is dead, it fails at a real step and
+		// screenshots it — far more useful than a false "expired".
 		const p = currentPage(activeContext) ?? (await activeContext.newPage());
-		await p
-			.goto(KAIRUKU_URL, { waitUntil: "domcontentloaded", timeout: 30_000 })
-			.catch(() => {});
-		if (await waitForAuthenticated(p)) {
-			setStatus("live", "Kairuku is live (reusing the open browser window).");
-			return { context: activeContext, page: p };
-		}
-		const seen = await describeCheckFailure(p);
-		await closeActiveContext();
-		setStatus("relogin_required", `Session expired — ${seen}. Log in again.`);
-		throw new KairukuReloginRequiredError("session expired");
+		setStatus("live", "Kairuku is live (reusing the open browser window).");
+		return { context: activeContext, page: p };
 	}
 
 	if (!existsSync(KAIRUKU_PROFILE_DIR)) {
