@@ -143,7 +143,7 @@ function App() {
 					))}
 				</nav>
 				<div className="mt-auto px-1 pt-6 text-[11px] text-neutral-400 dark:text-neutral-600">
-					{APP_VERSION}
+					{APP_VERSION} · local app
 				</div>
 			</aside>
 

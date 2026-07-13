@@ -4,8 +4,14 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 
-const page = readFileSync("scripts/standalone/page.html", "utf8");
+let page = readFileSync("scripts/standalone/page.html", "utf8");
 let bundle = readFileSync("scripts/standalone/bundle.js", "utf8");
+
+// Stamp the app version (single source of truth: src/version.ts) so the
+// hosted page and the local app can be told apart at a glance.
+const versionSrc = readFileSync("src/version.ts", "utf8");
+const version = versionSrc.match(/APP_VERSION\s*=\s*"([^"]+)"/)?.[1] ?? "unknown version";
+page = page.replaceAll("__ABYRX_VERSION__", version);
 
 // Never let a "</script>" inside the bundle close our inline <script> early.
 bundle = bundle.replace(/<\/script>/gi, "<\\/script>");
