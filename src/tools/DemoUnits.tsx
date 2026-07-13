@@ -88,7 +88,23 @@ export function DemoUnits() {
 
 	const [run, setRun] = useState<Run>({ state: "none" });
 	const [overage, setOverage] = useState<OverageRow[]>([]);
+	const [busy, setBusy] = useState(false);
+	const [captured, setCaptured] = useState<string | null>(null);
 	const fileRef = useRef<HTMLInputElement>(null);
+
+	const capturePage = async () => {
+		setBusy(true);
+		try {
+			const r = await api<{ pageInfo: string }>("/api/kairuku/inspect", {
+				method: "POST",
+			});
+			setCaptured(r.pageInfo);
+		} catch (err) {
+			setCaptured(err instanceof Error ? err.message : "Couldn't capture the page.");
+		} finally {
+			setBusy(false);
+		}
+	};
 
 	const refreshStatus = useCallback(async () => {
 		try {
@@ -286,6 +302,33 @@ export function DemoUnits() {
 					</a>{" "}
 					tab, get it green (Live / Ready), then come back. If you just started
 					the app, hit "Check Session Status" there.
+				</div>
+			)}
+
+			{/* Inspector: show Claude any Kairuku screen, no credentials needed */}
+			{kairukuLive && (
+				<div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/50 dark:text-blue-200">
+					<div className="flex flex-wrap items-center gap-3">
+						<button
+							onClick={() => void capturePage()}
+							disabled={busy}
+							className={`${btn} bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-40`}
+						>
+							{busy ? "Capturing…" : "Capture current Kairuku page"}
+						</button>
+						<span className="text-xs opacity-80">
+							Navigate your Kairuku window to any screen, click this, and paste
+							the box to Claude — so it can see the real page.
+						</span>
+					</div>
+					{captured && (
+						<textarea
+							readOnly
+							value={captured}
+							onFocus={(e) => e.currentTarget.select()}
+							className="mt-3 h-40 w-full rounded-lg border border-blue-300 bg-white p-2 font-mono text-[11px] text-neutral-800 dark:border-blue-800 dark:bg-neutral-900 dark:text-neutral-200"
+						/>
+					)}
 				</div>
 			)}
 

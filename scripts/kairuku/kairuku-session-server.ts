@@ -33,10 +33,11 @@ import {
 	openKairukuLoginWindow,
 	KAIRUKU_URL,
 } from "./kairukuSessionManager.ts";
-import { getDemoUnitsRun, startDemoUnitsRun } from "./demoUnitsRunner.ts";
+import { getDemoUnitsRun, startDemoUnitsRun, pageFingerprint } from "./demoUnitsRunner.ts";
 import type { DemoUnitsInput } from "./demoUnitsRunner.ts";
 import { extractShippingSheet } from "./extractShippingSheet.ts";
 import { buildOverageXlsx, getOverageRows } from "./overageSheet.ts";
+import { getStandingPage } from "./kairukuSessionManager.ts";
 import { APP_VERSION } from "../../src/version.ts";
 
 /** Status responses carry the service's build version so the app can detect
@@ -114,6 +115,18 @@ const server = createServer(async (req, res) => {
 			}
 			case "GET /api/kairuku/demo-units/run":
 				return sendJson(res, 200, getDemoUnitsRun() ?? { state: "none" });
+
+			// Dump whatever screen the standing Kairuku window is on right now,
+			// so the user can show Claude any page without sharing credentials.
+			case "POST /api/kairuku/inspect": {
+				const p = getStandingPage();
+				if (!p)
+					return sendJson(res, 200, {
+						pageInfo:
+							"No Kairuku window is open. Go to the Kairuku Session tab and get it Live/Ready first.",
+					});
+				return sendJson(res, 200, { pageInfo: await pageFingerprint(p) });
+			}
 
 			case "GET /api/kairuku/overage":
 				return sendJson(res, 200, { rows: getOverageRows() });

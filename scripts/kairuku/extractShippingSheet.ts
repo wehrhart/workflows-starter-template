@@ -171,12 +171,6 @@ async function ocrBox(
 // Field extraction
 // ---------------------------------------------------------------------------
 
-const twelveDigits = (text: string): string => {
-	const joined = text.replace(/(\d)[ \t](?=\d)/g, "$1");
-	const m = joined.match(/\b(\d{12})\b/);
-	return m ? m[1] : "";
-};
-
 /**
  * The typed tracking number sits in the top area of the sheet. Grid-scan
  * digit-only single-line boxes (center first — that's where airbill tracking

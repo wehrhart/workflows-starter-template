@@ -45,10 +45,15 @@ const SEL = {
 	navUidTracking: "UID Tracking",
 	navDemoUnits: "Demo Units",
 	navProfessionals: "Professionals",
-	/** Distributors page search box (first match wins). */
-	distributorSearch:
-		'input[type="search"], input[placeholder*="earch"], input[name*="search" i]',
-	/** Demo Units form fields, found by their label text (regex). */
+	/**
+	 * Real Kairuku (ASP.NET WebForms) uses cascading dropdowns, NOT a search
+	 * box. Confirmed live: a distributor <select id="DistributorID"> and a
+	 * sales-rep <select id="SalesRepID"> that repopulates after the distributor
+	 * postback. Product/qty selectors are still label-based until confirmed.
+	 */
+	distributorSelect: "#DistributorID",
+	salesRepSelect: "#SalesRepID",
+	/** Demo Units form fields, found by their label text (regex) as a fallback. */
 	labelDistributor: /distributor/i,
 	labelSalesRep: /sales\s*rep/i,
 	labelProduct: /product/i,
@@ -191,7 +196,7 @@ async function textVisible(page: Page, text: string): Promise<boolean> {
  * WebForms app this is exactly what's needed to write a precise selector,
  * with no file hunting or attachments.
  */
-async function pageFingerprint(page: Page): Promise<string> {
+export async function pageFingerprint(page: Page): Promise<string> {
 	try {
 		return await page.evaluate(() => {
 			const clip = (s: string | null) => (s ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
@@ -230,46 +235,53 @@ async function pageFingerprint(page: Page): Promise<string> {
 	}
 }
 
+/** Read a native <select>'s option labels (trimmed, blanks dropped). */
+async function optionLabels(select: Locator): Promise<string[]> {
+	return (await select.locator("option").allTextContents())
+		.map((t) => t.trim())
+		.filter(Boolean);
+}
+
 /**
- * Type into a search/text box, tolerantly. The real Kairuku search field may
- * be a plain text input, a search input, a role=searchbox, or wrapped so its
- * placeholder/name differ from the guess — so try the configured selector
- * first, then fall back to the first visible text-like input on the page.
- * Types character-by-character (some search widgets ignore a bulk fill) and
- * submits with Enter.
+ * Walk the distributor dropdown to find the one whose sales-rep dropdown
+ * lists this rep — the real-Kairuku equivalent of the spec's "search
+ * distributors for the rep". Selecting a distributor triggers an ASP.NET
+ * postback that repopulates the rep dropdown, so we select, settle, and read.
+ * Returns { distributor, repLabel } on a match, or null if no distributor
+ * lists the rep. Skips placeholder options ("-- select --", "All", empty).
  */
-async function fillSearch(page: Page, value: string): Promise<boolean> {
-	const selectors = [
-		SEL.distributorSearch,
-		'input[type="search"]',
-		'[role="searchbox"]',
-		'input[placeholder*="search" i]',
-		'input[aria-label*="search" i]',
-		'input[name*="search" i]',
-		'input[id*="search" i]',
-		'input[type="text"]',
-		"input:not([type])",
-		'input[type="email"]',
-		'[contenteditable="true"]',
-	];
-	for (const sel of selectors) {
-		const box = page.locator(sel).first();
+async function findDistributorForRep(
+	page: Page,
+	first: string,
+	last: string,
+	onProgress: (msg: string) => void,
+): Promise<{ distributor: string; repLabel: string } | null> {
+	const distSelect = page.locator(SEL.distributorSelect).first();
+	await distSelect.waitFor({ state: "visible", timeout: 15_000 });
+	const dists = (await optionLabels(distSelect)).filter(
+		(d) => !/^(--|\s*select|all\b|choose|none|\s*)$/i.test(d),
+	);
+	onProgress(`checking ${dists.length} distributors…`);
+	for (let i = 0; i < dists.length; i++) {
+		const d = dists[i];
 		try {
-			await box.waitFor({ state: "visible", timeout: 2_500 });
+			await distSelect.selectOption({ label: d });
+			await distSelect.dispatchEvent("change").catch(() => {});
+			await settle(page);
+			const repSelect = page.locator(SEL.salesRepSelect).first();
+			if ((await repSelect.count()) === 0) continue;
+			const reps = await optionLabels(repSelect);
+			const hit = reps.find((r) => matchesLastFirst(r, first, last));
+			if (hit) {
+				onProgress(`found under ${d}`);
+				return { distributor: d, repLabel: hit };
+			}
 		} catch {
-			continue;
+			// selecting this option failed — move on
 		}
-		try {
-			await box.click({ timeout: 2_000 });
-			await box.fill("").catch(() => {});
-			await box.pressSequentially(value, { delay: 40 });
-			await box.press("Enter").catch(() => {});
-			return true;
-		} catch {
-			// try the next selector
-		}
+		if (i % 10 === 9) onProgress(`checked ${i + 1}/${dists.length}…`);
 	}
-	return false;
+	return null;
 }
 
 /** Find a form control (select/input/textarea) by its label text. */
@@ -351,14 +363,6 @@ function matchesLastFirst(option: string, first: string, last: string): boolean 
 	if (!o.startsWith(`${norm(last)},`)) return false;
 	const firstToken = norm(first).split(" ")[0] ?? "";
 	return firstToken === "" || o.includes(firstToken);
-}
-
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** "Last, First" appearing anywhere in a blob of page text. */
-function lastFirstInText(text: string, first: string, last: string): boolean {
-	const firstToken = norm(first).split(" ")[0] ?? "";
-	return new RegExp(`${escapeRe(last)}\\s*,\\s*${escapeRe(firstToken)}`, "i").test(text);
 }
 
 // ---------------------------------------------------------------------------
@@ -460,40 +464,18 @@ async function run(input: DemoUnitsInput) {
 			return;
 		}
 
-		// ── Part 1: find the rep's distributor ────────────────────────────────
+		// ── Part 1: find the rep's distributor via the real dropdowns ─────────
 		s = step(`Find distributor for ${lastFirst}`);
 		await goHome(page);
-		await clickText(page, SEL.navDistributors);
+		await clickText(page, SEL.navDistributors).catch(() => {});
 		await settle(page);
-		if (!(await fillSearch(page, last))) {
-			throw new Error(
-				"Couldn't find the Distributors search box — send the failure screenshot so the selector can be set to the real one.",
-			);
-		}
-		await settle(page);
-
-		// Result rows: links that aren't the top-nav items.
-		const NAV_TEXTS = [
-			SEL.navDistributors,
-			SEL.navDashboard,
-			SEL.navUidTracking,
-			SEL.navDemoUnits,
-		].map(norm);
-		const readResults = async (): Promise<string[]> => {
-			const texts = await page
-				.locator("main a, table a, [role=main] a, a")
-				.allTextContents();
-			return [...new Set(texts.map((t) => t.trim()))].filter(
-				(t) => t.length > 1 && !NAV_TEXTS.includes(norm(t)),
-			);
-		};
-		const results = await readResults();
-
-		let distributor: string | null = null;
-		if (results.length === 0) {
+		const match = await findDistributorForRep(page, first, last, (m) => {
+			s.detail = m;
+		});
+		if (!match) {
 			if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
 			s.status = "done";
-			s.detail = `No Distributors search results for "${last}"`;
+			s.detail = `${lastFirst} not listed under any distributor`;
 			await goHome(page);
 			await finish(
 				`${input.repName} not found in Kairuku — ${
@@ -504,40 +486,10 @@ async function run(input: DemoUnitsInput) {
 			);
 			return;
 		}
-		if (results.length === 1) {
-			distributor = results[0];
-		} else {
-			// Open each candidate → Professionals → look for "Last, First".
-			for (const candidate of results) {
-				await clickText(page, candidate);
-				await settle(page);
-				await clickText(page, SEL.navProfessionals).catch(() => {});
-				await settle(page);
-				const people = (await page.locator("main, body").first().textContent()) ?? "";
-				const found = lastFirstInText(people, first, last);
-				// Back to the search results for the next candidate either way.
-				await page.goBack().catch(() => {});
-				await settle(page);
-				if (found) {
-					distributor = candidate;
-					break;
-				}
-				await page.goBack().catch(() => {});
-				await settle(page);
-			}
-			if (!distributor) {
-				if (!input.dryRun) addOverageRow(input.repName, "NOT IN k.");
-				s.status = "done";
-				s.detail = `${results.length} distributors matched "${last}" but none listed ${lastFirst}`;
-				await goHome(page);
-				await finish(
-					`${input.repName} not found under any distributor — logged as "NOT IN k.". No entry made.`,
-				);
-				return;
-			}
-		}
+		const distributor = match.distributor;
+		const foundRepLabel = match.repLabel;
 		s.status = "done";
-		s.detail = `Distributor: ${distributor}`;
+		s.detail = `Distributor: ${distributor} · Rep: ${foundRepLabel}`;
 
 		// ── Parts 2–4, once per entry ─────────────────────────────────────────
 		const saved: string[] = [];
@@ -552,7 +504,10 @@ async function run(input: DemoUnitsInput) {
 			s.status = "done";
 
 			s = step(`${entry.product}: select distributor`);
-			const distSelect = await labeledControl(page, SEL.labelDistributor, SELECT_KINDS);
+			// Prefer the real #DistributorID select; fall back to label lookup.
+			let distSelect = page.locator(SEL.distributorSelect).first();
+			if ((await distSelect.count()) === 0)
+				distSelect = await labeledControl(page, SEL.labelDistributor, SELECT_KINDS);
 			const distMatch = await pickOption(distSelect, distributor);
 			if (!distMatch) {
 				s.status = "done";
@@ -563,14 +518,20 @@ async function run(input: DemoUnitsInput) {
 				);
 				return;
 			}
-			await settle(page); // page reloads and the sales-rep dropdown fills in
+			await settle(page); // postback repopulates the sales-rep dropdown
 			s.status = "done";
 			s.detail = distMatch;
 
 			s = step(`${entry.product}: select sales rep ${lastFirst}`);
-			const repSelect = await labeledControl(page, SEL.labelSalesRep, SELECT_KINDS);
-			const repOptions = await repSelect.locator("option").allTextContents();
-			const repMatch = repOptions.map((o) => o.trim()).find((o) => matchesLastFirst(o, first, last));
+			let repSelect = page.locator(SEL.salesRepSelect).first();
+			if ((await repSelect.count()) === 0)
+				repSelect = await labeledControl(page, SEL.labelSalesRep, SELECT_KINDS);
+			const repOptions = (await repSelect.locator("option").allTextContents()).map((o) =>
+				o.trim(),
+			);
+			const repMatch =
+				repOptions.find((o) => o === foundRepLabel) ??
+				repOptions.find((o) => matchesLastFirst(o, first, last));
 			if (!repMatch) {
 				throw new Error(
 					`${lastFirst} isn't in the sales rep dropdown for ${distMatch}`,

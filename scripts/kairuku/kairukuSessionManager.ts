@@ -130,6 +130,16 @@ export function getKairukuStatus(): KairukuStatusReport {
 	return { status, detail, updatedAt };
 }
 
+/**
+ * The current page of the standing Kairuku window (login OR session), without
+ * navigating or verifying anything. Lets a tool inspect whatever screen the
+ * user has that window on right now. Null if no window is open.
+ */
+export function getStandingPage(): Page | null {
+	if (activeContext) return currentPage(activeContext);
+	return null;
+}
+
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
