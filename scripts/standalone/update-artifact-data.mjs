@@ -54,7 +54,7 @@ content = content.slice(0, marker) + newDataSafe + content.slice(end + 1);
 
 // Sanity: nothing lost.
 for (const m of ["kaiser-billing", "price-quote", "price-information", "kairuku-session",
-	"AbyrxKaiser", "AbyrxQuote", "AbyrxPrice", "Use Here", "P.lookup(s.code).approved"]) {
+	"AbyrxKaiser", "AbyrxQuote", "AbyrxPrice", "Use Here", "res.sisters.map", "<details><summary"]) {
 	if (!content.includes(m)) throw new Error(`post-swap sanity failed: missing ${m}`);
 }
 

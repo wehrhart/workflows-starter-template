@@ -44,3 +44,7 @@ scripts/standalone/abyrx-tools.html
 # Lives only in the private artifact + local working copy.
 worker/lib/price-data.ts
 scripts/price-systems.json
+
+# Built artifact HTML (inlines confidential KAIRUKU dataset — never commit)
+dist-artifact/
+scratchpad-artifact.html
