@@ -17,6 +17,7 @@
 		"docs_url": "https://developers.cloudflare.com/workflows/"
 	},
 	"dependencies": {
+		"@anthropic-ai/sdk": "^0.111.0",
 		"fflate": "0.8.2",
 		"heic-decode": "^2.1.0",
 		"jspdf": "^4.2.1",

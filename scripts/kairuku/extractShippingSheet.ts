@@ -17,6 +17,9 @@
  *  • HEIC (iPhone photo format) is decoded locally via heic-decode.
  */
 
+import { readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { deflateSync, crc32 } from "node:zlib";
 import Tesseract from "tesseract.js";
 import { KAIRUKU_DATA_DIR } from "./overageSheet.ts";
@@ -37,6 +40,10 @@ export interface ShippingSheetExtraction {
 	quantities: ShippingSheetQuantities;
 	/** Full OCR text, for eyeballing what the reader saw. */
 	rawText: string;
+	/** Which reader produced this: Claude vision (near-perfect, needs an API key) or local OCR. */
+	reader: "claude" | "local";
+	/** One-line note for the review page (e.g. why fields are blank). */
+	readerNote?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -354,12 +361,146 @@ function findRepName(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Claude vision reader (optional, near-perfect — reads the handwriting too).
+// Activated by an Anthropic API key, from either the ANTHROPIC_API_KEY env
+// var or a one-line file at ~/.abyrx-kairuku/anthropic-api-key.txt.
+// Only the shipping-sheet photo is sent to the Claude API; costs pennies per
+// sheet. Without a key, the fully local OCR below runs instead.
+// ---------------------------------------------------------------------------
+
+const KEY_FILE = path.join(os.homedir(), ".abyrx-kairuku", "anthropic-api-key.txt");
+
+function getAnthropicKey(): string | null {
+	if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+	try {
+		const key = readFileSync(KEY_FILE, "utf8").trim();
+		return key || null;
+	} catch {
+		return null;
+	}
+}
+
+const VISION_SCHEMA = {
+	type: "object",
+	additionalProperties: false,
+	required: ["trackingNumber", "repName", "quantities"],
+	properties: {
+		trackingNumber: {
+			type: "string",
+			description: "The typed 12-digit FedEx tracking number, digits only. Empty string if not readable.",
+		},
+		repName: {
+			type: "string",
+			description: "The handwritten recipient name from section 3 (To / Recipient's Name), as 'First Last'. Empty string if not readable.",
+		},
+		quantities: {
+			type: "object",
+			additionalProperties: false,
+			required: ["M", "C", "G", "T", "H", "HA", "P"],
+			properties: Object.fromEntries(
+				["M", "C", "G", "T", "H", "HA", "P"].map((k) => [
+					k,
+					{ anyOf: [{ type: "integer" }, { type: "null" }] },
+				]),
+			),
+		},
+	},
+} as const;
+
+async function tryClaudeVision(
+	image: Buffer,
+): Promise<ShippingSheetExtraction | null> {
+	const apiKey = getAnthropicKey();
+	if (!apiKey) return null;
+
+	const { default: Anthropic } = await import("@anthropic-ai/sdk");
+	const client = new Anthropic({ apiKey });
+	const mediaType = image[0] === 0x89 ? "image/png" : "image/jpeg";
+
+	const response = await client.messages.create({
+		model: "claude-opus-4-8",
+		max_tokens: 4096,
+		thinking: { type: "adaptive" },
+		output_config: {
+			format: { type: "json_schema", schema: VISION_SCHEMA as Record<string, unknown> },
+		},
+		messages: [
+			{
+				role: "user",
+				content: [
+					{
+						type: "image",
+						source: { type: "base64", media_type: mediaType, data: image.toString("base64") },
+					},
+					{
+						type: "text",
+						text:
+							"This is a photo of a FedEx US Airbill shipping sheet. Extract exactly three things:\n" +
+							"1. trackingNumber — the TYPED 12-digit FedEx tracking number printed near the top (often spaced '#### #### ####'; return digits only).\n" +
+							"2. repName — the HANDWRITTEN recipient name in section 3 ('To' / 'Recipient's Name'), as 'First Last'.\n" +
+							"3. quantities — handwritten codes in the top-right area pairing a quantity with a letter code: M, C, G, T, H, HA, or P. They may be written number-first ('3M') or letter-first ('M3'). Set a code's value to its number, and null for any code not written. Match HA before H.\n" +
+							"Read carefully; if something is truly illegible, use empty string / null rather than guessing.",
+					},
+				],
+			},
+		],
+	});
+
+	if (response.stop_reason === "refusal") {
+		throw new Error("The vision reader declined this image.");
+	}
+	const textBlock = response.content.find((b) => b.type === "text");
+	if (!textBlock || textBlock.type !== "text") {
+		throw new Error("The vision reader returned no text.");
+	}
+	const parsed = JSON.parse(textBlock.text) as {
+		trackingNumber: string;
+		repName: string;
+		quantities: Record<string, number | null>;
+	};
+
+	const num = (v: unknown): number | null =>
+		typeof v === "number" && Number.isFinite(v) && v >= 0 && v < 1000
+			? Math.round(v)
+			: null;
+	let tracking = (parsed.trackingNumber ?? "").replace(/\D/g, "");
+	if (tracking.length !== 12) tracking = "";
+	return {
+		trackingNumber: tracking,
+		repName: (parsed.repName ?? "").replace(/\s+/g, " ").trim(),
+		quantities: {
+			montage: num(parsed.quantities?.M),
+			cartridge: num(parsed.quantities?.C),
+			gun: num(parsed.quantities?.G),
+			tips: num(parsed.quantities?.T),
+			hemasorb: num(parsed.quantities?.H),
+			hemasorbApply: num(parsed.quantities?.HA),
+			permatage: num(parsed.quantities?.P),
+		},
+		rawText: "(read by Claude vision)",
+		reader: "claude",
+	};
+}
+
+// ---------------------------------------------------------------------------
 
 export async function extractShippingSheet(
 	imageBuffer: Buffer,
 ): Promise<ShippingSheetExtraction> {
 	const { image, width, height } = await normalizeImage(imageBuffer);
-	// Full-page pass: source for the name patterns + tracking fallback.
+
+	// Prefer Claude vision when a key is configured — it reads the handwriting.
+	let visionNote: string | undefined;
+	try {
+		const vision = await tryClaudeVision(image);
+		if (vision) return vision;
+	} catch (err) {
+		const msg = err instanceof Error ? err.message.split("\n")[0] : "unknown error";
+		console.log(`[demo-units] vision reader failed, using local OCR: ${msg}`);
+		visionNote = `Claude vision reader failed (${msg}) — used the local reader instead.`;
+	}
+
+	// Local OCR fallback: fully offline, safe-blanks-over-guesses.
 	const fullText = await ocrBox(image, null, "", "3").catch(() => "");
 	const trackingNumber = await findTrackingNumber(image, width, height, fullText);
 	const quantities = await findQuantities(image, width, height);
@@ -368,5 +509,9 @@ export async function extractShippingSheet(
 		repName: findRepName(fullText),
 		quantities,
 		rawText: fullText,
+		reader: "local",
+		readerNote:
+			visionNote ??
+			"Read locally — the typed tracking number auto-fills when certain; handwriting usually needs typing. For near-perfect auto-fill, add a Claude API key (see the README).",
 	};
 }

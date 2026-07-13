@@ -33,7 +33,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { Locator, Page } from "playwright";
-import { requireKairukuSession, closeKairukuBrowser, KAIRUKU_URL } from "./kairukuSessionManager.ts";
+import { requireKairukuSession, KAIRUKU_URL } from "./kairukuSessionManager.ts";
 import { addOverageRow, KAIRUKU_DATA_DIR } from "./overageSheet.ts";
 
 const DEBUG_DIR = path.join(KAIRUKU_DATA_DIR, "debug");
@@ -336,7 +336,8 @@ async function finish(outcome: string, state: "completed" | "failed" = "complete
 	currentRun.outcome = outcome;
 	currentRun.finishedAt = new Date().toISOString();
 	console.log(`[demo-units] ${state}: ${outcome}`);
-	await closeKairukuBrowser().catch(() => {});
+	// The Kairuku window stays open (parked on the Dashboard) — it's the
+	// standing logged-in session, ready for the next run.
 }
 
 async function run(input: DemoUnitsInput) {

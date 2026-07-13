@@ -81,6 +81,7 @@ export function DemoUnits() {
 	const [repName, setRepName] = useState("");
 	const [qty, setQty] = useState<Quantities>(EMPTY_QTY);
 	const [dryRun, setDryRun] = useState(false);
+	const [readerNote, setReaderNote] = useState<string | null>(null);
 
 	const [run, setRun] = useState<Run>({ state: "none" });
 	const [overage, setOverage] = useState<OverageRow[]>([]);
@@ -150,6 +151,8 @@ export function DemoUnits() {
 				trackingNumber: string;
 				repName: string;
 				quantities: Record<string, number | null>;
+				reader?: string;
+				readerNote?: string;
 			}>("/api/kairuku/demo-units/extract", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
@@ -157,6 +160,11 @@ export function DemoUnits() {
 			});
 			setTracking(ex.trackingNumber);
 			setRepName(ex.repName);
+			setReaderNote(
+				ex.reader === "claude"
+					? "Read by Claude vision — double-check, then Submit."
+					: (ex.readerNote ?? null),
+			);
 			const next = { ...EMPTY_QTY };
 			for (const f of QTY_FIELDS) {
 				const v = ex.quantities?.[f.key];
@@ -229,6 +237,7 @@ export function DemoUnits() {
 		setQty(EMPTY_QTY);
 		setRun({ state: "none" });
 		setError(null);
+		setReaderNote(null);
 		if (fileRef.current) fileRef.current.value = "";
 	};
 
@@ -320,6 +329,11 @@ export function DemoUnits() {
 						Everything below is editable — fix any misreads, fill in what's
 						missing, then Submit.
 					</p>
+					{readerNote && (
+						<p className="mb-4 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-neutral-800/60 dark:text-neutral-400">
+							{readerNote}
+						</p>
+					)}
 					<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 						<label className="block">
 							<span className="mb-1 block text-xs font-medium text-neutral-500 dark:text-neutral-400">

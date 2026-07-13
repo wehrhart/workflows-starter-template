@@ -335,9 +335,17 @@ export async function openKairukuLoginWindow(): Promise<KairukuStatusReport> {
 	// If the user closes the window themselves, reflect that.
 	ctx.on("close", () => {
 		if (activeContext === ctx) {
+			const wasSession = activeMode === "session";
 			activeContext = null;
 			activeMode = null;
-			if (status === "login_window_open" || status === "checking") {
+			if (wasSession) {
+				// The user closed the standing window — the saved profile keeps
+				// the login, and tools reopen a window when they need one.
+				setStatus(
+					"live",
+					"Kairuku window closed — your login is saved. A window reopens automatically when a tool needs it.",
+				);
+			} else if (status === "login_window_open" || status === "checking") {
 				setStatus(
 					"not_connected",
 					"Login window was closed before login was detected.",
@@ -355,9 +363,9 @@ export async function openKairukuLoginWindow(): Promise<KairukuStatusReport> {
 			if (!p) continue;
 			if (await isAuthenticated(p)) {
 				setStatus("checking", "Login detected — confirming…");
-				// Confirm the logged-in state HOLDS (two more checks, 4s apart)
-				// before closing — a brief between-screens moment must not close
-				// the window while the user is mid-login/MFA.
+				// Confirm the logged-in state HOLDS (two more checks, 4s apart) —
+				// a brief between-screens moment must not count as logged in
+				// while the user is mid-login/MFA.
 				await sleep(4_000);
 				const midPage = currentPage(ctx);
 				const midOk =
@@ -370,10 +378,14 @@ export async function openKairukuLoginWindow(): Promise<KairukuStatusReport> {
 					confirmPage &&
 					(await isAuthenticated(confirmPage))
 				) {
-					await closeActiveContext();
+					// KEEP THE WINDOW OPEN. This very window is the logged-in
+					// session — tools drive it directly, which sidesteps every
+					// headless/bot-detection problem. It becomes the standing
+					// session window; the user can minimize it.
+					activeMode = "session";
 					setStatus(
 						"live",
-						"Kairuku session is live — the login window was closed automatically.",
+						"Kairuku is live — keeping the browser window open in the background for the tools to use. Minimize it if it's in the way (don't close it).",
 					);
 					return;
 				}
@@ -400,13 +412,9 @@ export async function checkKairukuSessionStatus(): Promise<KairukuStatusReport> 
 	if (activeMode === "login") return getKairukuStatus();
 
 	if (activeMode === "session" && activeContext) {
-		const p = currentPage(activeContext);
-		if (p && (await isAuthenticated(p))) {
-			setStatus("live", "Kairuku session is live (open session in use).");
-		} else {
-			await closeActiveContext();
-			setStatus("relogin_required", "The open session is no longer authenticated.");
-		}
+		// The standing window is open — it was verified when it was opened,
+		// and poking at its page could disturb a tool run in progress.
+		setStatus("live", "Kairuku is live (browser window open in the background).");
 		return getKairukuStatus();
 	}
 
@@ -416,13 +424,33 @@ export async function checkKairukuSessionStatus(): Promise<KairukuStatusReport> 
 	}
 
 	setStatus("checking", "Checking the saved Kairuku session…");
+	// Open a VISIBLE window (never headless — some sites bounce headless
+	// browsers to login even with a valid session). If the session is live,
+	// the window STAYS OPEN as the standing session window for the tools.
 	let ctx: BrowserContext | null = null;
 	try {
-		ctx = await launchPersistent(true);
+		ctx = await launchPersistent(false);
 		const page = currentPage(ctx) ?? (await ctx.newPage());
 		await page.goto(KAIRUKU_URL, { waitUntil: "domcontentloaded", timeout: 30_000 });
 		if (await waitForAuthenticated(page)) {
-			setStatus("live", "Kairuku session is live and ready.");
+			activeContext = ctx;
+			activeMode = "session";
+			const kept = ctx;
+			ctx.on("close", () => {
+				if (activeContext === kept) {
+					activeContext = null;
+					activeMode = null;
+					setStatus(
+						"live",
+						"Kairuku window closed — your login is saved. A window reopens automatically when a tool needs it.",
+					);
+				}
+			});
+			ctx = null; // don't close it in finally
+			setStatus(
+				"live",
+				"Kairuku is live — keeping a browser window open in the background for the tools. Minimize it if it's in the way.",
+			);
 		} else {
 			setStatus(
 				"relogin_required",
@@ -455,13 +483,18 @@ export async function getKairukuAuthenticatedPage(): Promise<{
 	}
 
 	if (activeMode === "session" && activeContext) {
+		// Reuse the standing window — bring it home and confirm it's still in.
 		const p = currentPage(activeContext) ?? (await activeContext.newPage());
-		if (await isAuthenticated(p)) {
-			setStatus("live", "Kairuku session is live (reusing open session).");
+		await p
+			.goto(KAIRUKU_URL, { waitUntil: "domcontentloaded", timeout: 30_000 })
+			.catch(() => {});
+		if (await waitForAuthenticated(p)) {
+			setStatus("live", "Kairuku is live (reusing the open browser window).");
 			return { context: activeContext, page: p };
 		}
+		const seen = await describeCheckFailure(p);
 		await closeActiveContext();
-		setStatus("relogin_required", "Session expired — log in again.");
+		setStatus("relogin_required", `Session expired — ${seen}. Log in again.`);
 		throw new KairukuReloginRequiredError("session expired");
 	}
 
@@ -471,9 +504,11 @@ export async function getKairukuAuthenticatedPage(): Promise<{
 	}
 
 	setStatus("checking", "Opening the saved Kairuku session…");
+	// VISIBLE window — it becomes the standing session window (and the user
+	// gets to watch the tools work in it).
 	let ctx: BrowserContext;
 	try {
-		ctx = await launchPersistent(true);
+		ctx = await launchPersistent(false);
 	} catch (err) {
 		setStatus("not_connected", "Could not open the saved session.");
 		throw err;

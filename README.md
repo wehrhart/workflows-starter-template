@@ -88,6 +88,27 @@ Excel from the tab. All Kairuku-specific selectors live in the `SEL` block at
 the top of the runner — if a run stops, the failure screenshot in
 `~/.abyrx-kairuku/data/debug/` shows which one to adjust.
 
+## Near-perfect sheet reading (optional Claude API key)
+
+The Demo Units reader is fully local by default: the typed tracking number
+auto-fills when it passes the FedEx check digit, but handwriting (the rep's
+name, the top-right M/C/G/T/H/HA/P codes) is usually beyond local OCR — those
+boxes stay blank for you to type.
+
+To have the photo read by Claude vision instead (reads the handwriting too,
+costs pennies per sheet):
+
+1. Get an API key at <https://platform.claude.com> (Console → API keys).
+2. Save it as the only line of a file called `anthropic-api-key.txt` inside
+   the `.abyrx-kairuku` folder in your home directory
+   (`~/.abyrx-kairuku/anthropic-api-key.txt`).
+3. Restart via Start Abyrx Tools. The review page will say
+   "Read by Claude vision".
+
+Only the shipping-sheet photo is sent to the Claude API. No key → everything
+stays local, exactly as before. If the key stops working the reader falls
+back to local OCR and says so on the review page.
+
 ## Kairuku session service
 
 A browser page (and the Cloudflare worker) can't launch a desktop browser, so

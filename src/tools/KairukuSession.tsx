@@ -221,8 +221,11 @@ export function KairukuSession() {
 					</li>
 					<li>Log in and enter the MFA code from your text, in that window.</li>
 					<li>
-						Once you're in, the window closes by itself and the status here
-						turns green: <em>Live / Ready</em>.
+						Once you're in, the status here turns green (<em>Live / Ready</em>)
+						and the window <strong>stays open in the background</strong> — the
+						tools drive that exact window, and you can watch them work.
+						Minimize it if it's in the way; closing it is also fine (your login
+						is saved, and a window reopens when a tool needs one).
 					</li>
 					<li>
 						The session lives in a private browser profile in your home folder
