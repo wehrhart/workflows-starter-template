@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Demo Units — photo of a shipping sheet → demo unit entries in Kairuku.
+ * Demo Units — type in the shipping sheet's details → demo unit entries in
+ * Kairuku.
  *
  * Needs the local session service (same one as the Kairuku Session tab) AND a
- * live Kairuku session. Flow: upload the sheet photo → review/fix the
- * extracted tracking number, rep name, and M/C/G/T/H/HA/P quantities →
- * Submit → watch the automation run step by step. Overage cases accumulate on
- * the "Overage reps" sheet, downloadable below.
+ * live Kairuku session. Flow: fill in the tracking number, rep name, and
+ * M/C/G/T/H/HA/P quantities (optionally pre-filled from a photo) → Submit →
+ * watch the automation run step by step. Overage cases accumulate on the
+ * "Overage reps" sheet, downloadable below.
  */
 
 const SERVICE_URL = "http://127.0.0.1:5281";
@@ -62,7 +63,7 @@ interface OverageRow {
 	type: string;
 }
 
-type Stage = "upload" | "extracting" | "review" | "running" | "done";
+type Stage = "review" | "extracting" | "running" | "done";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
 	const res = await fetch(`${SERVICE_URL}${path}`, init);
@@ -74,7 +75,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export function DemoUnits() {
 	const [serviceOnline, setServiceOnline] = useState(false);
 	const [kairukuLive, setKairukuLive] = useState(false);
-	const [stage, setStage] = useState<Stage>("upload");
+	const [stage, setStage] = useState<Stage>("review");
 	const [error, setError] = useState<string | null>(null);
 
 	const [tracking, setTracking] = useState("");
@@ -180,7 +181,7 @@ export function DemoUnits() {
 						? err.message
 						: "Extraction failed",
 			);
-			setStage("upload");
+			setStage("review");
 		}
 	};
 
@@ -231,7 +232,7 @@ export function DemoUnits() {
 	};
 
 	const reset = () => {
-		setStage("upload");
+		setStage("review");
 		setTracking("");
 		setRepName("");
 		setQty(EMPTY_QTY);
@@ -263,8 +264,7 @@ export function DemoUnits() {
 				Demo Units
 			</h2>
 			<p className="mb-6 text-sm text-neutral-500 dark:text-neutral-400">
-				Snap the shipping sheet → check what was read → the tool enters the demo
-				in Kairuku for you.
+				Type in the demo details → the tool enters the demo in Kairuku for you.
 			</p>
 
 			{/* Gate: service + live session */}
@@ -287,48 +287,37 @@ export function DemoUnits() {
 				</div>
 			)}
 
-			{/* Stage: upload */}
-			{(stage === "upload" || stage === "extracting") && (
+			{/* Stage: the form (with an optional photo-fill helper) */}
+			{(stage === "review" || stage === "extracting") && (
 				<div className="rounded-2xl border border-neutral-200 bg-white/80 p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/70">
 					<h3 className="mb-1 font-semibold text-neutral-800 dark:text-neutral-100">
-						1 · Shipping sheet photo
+						1 · Demo details
 					</h3>
 					<p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-						It reads the tracking number, the rep's name, and the handwritten
-						M / C / G / T / H / HA / P quantities in the top right. You'll get
-						to fix anything it misreads next.
+						Enter the tracking number, the rep's name, and the quantities from
+						the shipping sheet, then Submit.
 					</p>
-					<input
-						ref={fileRef}
-						type="file"
-						accept="image/*,.heic,.heif"
-						disabled={stage === "extracting" || !serviceOnline}
-						onChange={(e) => {
-							const f = e.target.files?.[0];
-							if (f) void onPhoto(f);
-						}}
-						className="block w-full text-sm text-neutral-600 file:mr-4 file:rounded-lg file:border-0 file:bg-neutral-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-neutral-700 dark:text-neutral-300 dark:file:bg-white dark:file:text-neutral-900"
-					/>
-					{stage === "extracting" && (
-						<p className="mt-3 text-sm text-neutral-500 dark:text-neutral-400">
-							Reading the sheet — up to a minute. The tracking number is only
-							auto-filled when it passes the FedEx check digit; anything the
-							reader isn't sure of is left blank for you to type.
-						</p>
-					)}
-				</div>
-			)}
-
-			{/* Stage: review */}
-			{stage === "review" && (
-				<div className="rounded-2xl border border-neutral-200 bg-white/80 p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/70">
-					<h3 className="mb-1 font-semibold text-neutral-800 dark:text-neutral-100">
-						2 · Check &amp; fix
-					</h3>
-					<p className="mb-4 text-sm text-neutral-500 dark:text-neutral-400">
-						Everything below is editable — fix any misreads, fill in what's
-						missing, then Submit.
-					</p>
+					<div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-neutral-50 px-3 py-2 dark:bg-neutral-800/60">
+						<span className="text-xs text-neutral-500 dark:text-neutral-400">
+							Optional — fill the fields from a photo:
+						</span>
+						<input
+							ref={fileRef}
+							type="file"
+							accept="image/*,.heic,.heif"
+							disabled={stage === "extracting" || !serviceOnline}
+							onChange={(e) => {
+								const f = e.target.files?.[0];
+								if (f) void onPhoto(f);
+							}}
+							className="text-xs text-neutral-600 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-200 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-neutral-700 hover:file:bg-neutral-300 dark:text-neutral-300 dark:file:bg-neutral-700 dark:file:text-neutral-200"
+						/>
+						{stage === "extracting" && (
+							<span className="text-xs text-neutral-500 dark:text-neutral-400">
+								Reading the photo — up to a minute…
+							</span>
+						)}
+					</div>
 					{readerNote && (
 						<p className="mb-4 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-500 dark:bg-neutral-800/60 dark:text-neutral-400">
 							{readerNote}
@@ -395,7 +384,7 @@ export function DemoUnits() {
 						</span>
 					</label>
 					<div className="mt-4 flex flex-wrap gap-3">
-						<button onClick={() => void submit()} disabled={!kairukuLive} className={primaryBtn}>
+						<button onClick={() => void submit()} disabled={!kairukuLive || stage === "extracting"} className={primaryBtn}>
 							{dryRun ? "Dry run — don't save" : "Submit — enter in Kairuku"}
 						</button>
 						<button onClick={reset} className={ghostBtn}>
@@ -414,7 +403,7 @@ export function DemoUnits() {
 			{(stage === "running" || stage === "done") && (
 				<div className="rounded-2xl border border-neutral-200 bg-white/80 p-5 shadow-sm dark:border-neutral-800 dark:bg-neutral-900/70">
 					<h3 className="mb-3 font-semibold text-neutral-800 dark:text-neutral-100">
-						3 · {stage === "running" ? "Entering in Kairuku…" : "Result"}
+						2 · {stage === "running" ? "Entering in Kairuku…" : "Result"}
 					</h3>
 					<div className="space-y-2">
 						{(run.steps ?? []).map((s, i) => (

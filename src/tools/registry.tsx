@@ -57,7 +57,7 @@ export const TOOLS: ToolDef[] = [
 	{
 		id: "demo-units",
 		name: "Demo Units",
-		tagline: "Shipping sheet photo → demo unit entries in Kairuku",
+		tagline: "Type in the demo details → entries in Kairuku",
 		icon: "📦",
 		status: "active",
 		component: DemoUnits,

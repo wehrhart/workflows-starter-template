@@ -306,7 +306,7 @@
     { id: "kairuku-session", name: "Kairuku Session", icon: "🔐",
       tagline: "Log in to Kairuku once — future tools reuse the session", active: true },
     { id: "demo-units", name: "Demo Units", icon: "📦",
-      tagline: "Shipping sheet photo → demo unit entries in Kairuku", active: true },
+      tagline: "Type in the demo details → entries in Kairuku", active: true },
     { id: "coming-soon", name: "Next tool", icon: "➕",
       tagline: "Another workflow can live here", active: false }
   ];
@@ -809,7 +809,7 @@
   function renderDemoUnits() {
     return '<div class="wrap">' +
       '<div style="margin-bottom:20px"><h1 class="page">Demo Units</h1>' +
-      '<p class="sub">Photo of the shipping sheet → the tool finds the rep’s distributor in Kairuku, enters the demo (MONTAGE and/or Montage Flowable), logs overages, and marks the order fulfilled.</p></div>' +
+      '<p class="sub">Type in the tracking number, rep name, and quantities → the tool finds the rep’s distributor in Kairuku, enters the demo (MONTAGE and/or Montage Flowable), logs overages, and marks the order fulfilled.</p></div>' +
       '<div class="card">' +
       '<div class="meta" id="du_state">Checking for the local app…</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:16px">' +
@@ -818,7 +818,7 @@
       '</div>' +
       '<div class="meta" id="du_help" style="display:none;margin-top:16px">Demo Units drives a real browser through Kairuku, so it runs in the local Abyrx app — double-click <b>Start Abyrx Tools</b> in your tools folder (see the Kairuku Session tab for the one-time setup), and it opens with this tool ready.</div>' +
       '</div>' +
-      '<p class="note">Uses the live login from the <b>Kairuku Session</b> tab — get that green first. Upload the sheet photo, fix anything the reader misread (tracking number, rep name, the top-right M/C/G/T/H/HA/P counts), press Submit, and watch it enter step by step. Reps that hit “Request Overage” (or aren’t in Kairuku) accumulate on the Overage reps sheet.</p>' +
+      '<p class="note">Uses the live login from the <b>Kairuku Session</b> tab — get that green first. Fill in the tracking number, rep name, and M/C/G/T/H/HA/P quantities (a photo can optionally pre-fill them), press Submit, and watch it enter step by step in the Kairuku window. Reps that hit “Request Overage” (or aren’t in Kairuku) accumulate on the Overage reps sheet.</p>' +
       '</div>';
   }
 
